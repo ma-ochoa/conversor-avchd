@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Montaje</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='montaje.css') }}">
+</head>
+<body>
+<header>
+  <div class="header-row">
+    <div>
+      <h1>🎬 Montaje</h1>
+      <p class="subtitle">Une clips, recorta, añade títulos y transiciones, y exporta un vídeo final.</p>
+    </div>
+    <a class="back-link" href="/">← Conversor</a>
+  </div>
+</header>
+
+<main>
+  <section id="root-section">
+    <h2>1. Carpeta del proyecto</h2>
+    <div class="path-row">
+      <input id="path-input" type="text" value="{{ home }}">
+      <button id="go-btn">Ir</button>
+      <button id="browse-btn" class="primary">📁 Explorar…</button>
+    </div>
+    <p class="muted">Debe ser la misma carpeta que usaste para convertir/estabilizar — el montaje usa
+    los clips ya convertidos (mp4), no los .MTS originales.</p>
+  </section>
+
+  <section id="project-section" class="hidden">
+    <h2>2. Proyecto</h2>
+    <div class="project-row">
+      <input id="project-name" type="text" placeholder="Nombre del proyecto" value="Mi montaje">
+      <button id="save-project-btn">💾 Guardar</button>
+      <select id="project-select"><option value="">— Cargar proyecto guardado —</option></select>
+      <button id="load-project-btn">Cargar</button>
+      <button id="new-project-btn">Nuevo</button>
+    </div>
+    <span id="project-status" class="status-text"></span>
+  </section>
+
+  <section id="clips-section" class="hidden">
+    <h2>3. Clips disponibles <span class="muted">(arrástralos a la línea de tiempo)</span></h2>
+    <div id="clips-grid" class="clips-grid"></div>
+    <p id="clips-empty" class="muted hidden">No hay clips convertidos o estabilizados en esta carpeta todavía.</p>
+  </section>
+
+  <section id="timeline-section" class="hidden">
+    <h2>4. Línea de tiempo</h2>
+    <div class="timeline-toolbar">
+      <label>Transición entre clips:
+        <input id="transition-seconds" type="number" min="0" max="5" step="0.5" value="2"> s
+      </label>
+      <span id="timeline-duration" class="muted"></span>
+    </div>
+    <div id="timeline" class="timeline dropzone">
+      <p id="timeline-empty" class="muted timeline-empty-hint">Arrastra aquí clips desde la cuadrícula de arriba</p>
+    </div>
+  </section>
+
+  <section id="export-section" class="hidden">
+    <h2>5. Exportar</h2>
+    <button id="export-btn" class="primary">🎞️ Exportar montaje final</button>
+    <div id="export-progress-wrap" class="hidden">
+      <progress id="export-progress" max="1" value="0"></progress>
+      <span id="export-status" class="status-text"></span>
+    </div>
+    <p id="export-result" class="hidden"></p>
+  </section>
+</main>
+
+<!-- Modal de previsualización / recorte -->
+<div id="preview-modal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" id="preview-close">✕</button>
+    <video id="preview-video" controls></video>
+    <div id="trim-controls" class="trim-controls hidden">
+      <div>
+        <label>Inicio: <input id="trim-in" type="number" step="0.1" min="0"> s</label>
+        <button id="mark-in-btn">Marcar aquí</button>
+      </div>
+      <div>
+        <label>Fin: <input id="trim-out" type="number" step="0.1" min="0"> s</label>
+        <button id="mark-out-btn">Marcar aquí</button>
+      </div>
+      <button id="trim-apply-btn" class="primary">Aplicar recorte</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de título -->
+<div id="title-modal" class="modal hidden">
+  <div class="modal-content">
+    <button class="modal-close" id="title-close">✕</button>
+    <h3>Título del clip</h3>
+    <label>Texto
+      <input id="title-text" type="text" placeholder="Escribe un título…">
+    </label>
+    <label>Fuente
+      <select id="title-font"></select>
+    </label>
+    <label>Duración del título
+      <input id="title-duration" type="number" min="0.5" max="15" step="0.5" value="3"> s
+    </label>
+    <hr>
+    <label>Imagen superpuesta (PNG con transparencia recomendado)</label>
+    <div class="path-row">
+      <input id="title-image" type="text" readonly placeholder="Ninguna imagen seleccionada">
+      <button id="title-image-pick">Elegir imagen…</button>
+      <button id="title-image-clear">Quitar</button>
+    </div>
+    <img id="title-image-preview" class="title-image-preview hidden">
+    <div class="modal-actions">
+      <button id="title-clear-btn">Quitar título</button>
+      <button id="title-save-btn" class="primary">Guardar título</button>
+    </div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='montaje.js') }}"></script>
+</body>
+</html>

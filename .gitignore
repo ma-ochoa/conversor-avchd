@@ -2,6 +2,8 @@
 private/
 conversion/
 estabilizado/
+montaje/
+.miniaturas/
 *.MTS
 *.M2TS
 *.mp4

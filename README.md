@@ -2,10 +2,11 @@
 
 Interfaz web (Flask, en local) para convertir los clips AVCHD (`.MTS`/`.M2TS`) de una
 cámara/camcorder a MP4 **sin recompresión de vídeo** (solo se cambia el contenedor),
-renombrar vídeos y fotos con su fecha y hora real de captura, y opcionalmente
-**estabilizar** los clips con temblor de cámara. Pensado para que el resultado se
-reproduzca sin problemas al subirlo a un NAS (Synology Photos, Plex, Emby, etc.) y se
-vea bien tanto en el móvil como en la TV.
+renombrar vídeos y fotos con su fecha y hora real de captura, estabilizar clips con
+temblor de cámara, y montar un vídeo final (recortes, títulos y transiciones) con un
+mini editor integrado. Pensado para que el resultado se reproduzca sin problemas al
+subirlo a un NAS (Synology Photos, Plex, Emby, etc.) y se vea bien tanto en el móvil
+como en la TV.
 
 ## Funciones
 
@@ -17,6 +18,9 @@ vea bien tanto en el móvil como en la TV.
 - **Estabilización opcional** (independiente del remuxeo): corrige el temblor de cámara
   con `vid.stab` (dos pasadas: detección + corrección). Esto sí recodifica el vídeo —
   es inevitable para poder corregirlo — y recorta ligeramente los bordes.
+- **Montaje**: mini editor (submenú "🎬 Montaje") para unir clips ya convertidos,
+  recortarlos, añadir títulos (texto o imagen con transparencia) y transiciones
+  cruzadas, guardando el trabajo como proyecto para continuarlo más tarde.
 - **Explorador de carpetas nativo**: botón "Explorar…" que abre el selector de carpetas
   de macOS (Finder), además de un navegador de carpetas dentro de la propia página.
 - No se modifican ni se borran los archivos originales en ningún momento.
@@ -26,8 +30,9 @@ vea bien tanto en el móvil como en la TV.
 - macOS (usa AppleScript para el selector de carpetas nativo y, opcionalmente,
   VideoToolbox para la estabilización acelerada por hardware).
 - Python 3.10+
-- [ffmpeg-full](https://ffmpeg.org/) (necesario para la estabilización, incluye
-  `libvidstab`) y [exiftool](https://exiftool.org/):
+- [ffmpeg-full](https://ffmpeg.org/) (necesario para la estabilización y para el
+  Montaje — incluye `libvidstab` y `libfreetype`/`libfontconfig` para los títulos) y
+  [exiftool](https://exiftool.org/):
 
   ```bash
   brew install ffmpeg ffmpeg-full exiftool
@@ -35,7 +40,7 @@ vea bien tanto en el móvil como en la TV.
 
   `ffmpeg-full` se instala aparte de `ffmpeg` sin pisarlo (queda "keg-only"); la app lo
   busca automáticamente en `/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg` cuando lo necesita.
-  Si solo vas a usar el remuxeo (sin estabilización), basta con `ffmpeg` normal.
+  Si solo vas a usar el remuxeo (sin estabilizar ni montar), basta con `ffmpeg` normal.
 
 ## Instalación
 
@@ -116,6 +121,54 @@ más tarda) no se acelera, así que el ahorro del proceso completo es modesto (~
 2×). La calidad baja ligeramente (VMAF ≈96/100 frente al modo normal, al mismo tamaño de
 archivo). Para la mejor calidad posible, déjala desmarcada.
 
+## Montaje (mini editor)
+
+Desde el enlace **🎬 Montaje** (arriba a la derecha) se abre un editor sencillo, estilo
+Pinnacle Studio pero muy básico, que trabaja **sobre los clips ya convertidos o
+estabilizados** (los `.mp4` de `conversion/`/`estabilizado/`; los `.MTS` originales no
+se pueden previsualizar en el navegador).
+
+### 1. Carpeta del proyecto
+
+Igual que en la pantalla principal: escribe la ruta, navega, o usa **Explorar…**. Debe
+ser la misma carpeta donde ya convertiste/estabilizaste clips.
+
+### 2. Proyecto
+
+Dale un nombre y pulsa **Guardar** en cualquier momento — el proyecto (clips en la
+línea de tiempo, recortes, títulos, duración de transición) se guarda como JSON en
+`montaje/proyectos/` dentro de la carpeta del paso 1. Con **Cargar** retomas un
+proyecto guardado; con **Nuevo** empiezas de cero sin perder lo guardado.
+
+### 3. Clips disponibles
+
+Cuadrícula con una miniatura por clip (se generan y cachean automáticamente la primera
+vez). Haz clic en una miniatura para previsualizar el clip en grande, o arrástrala a la
+línea de tiempo de más abajo para añadirlo al montaje.
+
+### 4. Línea de tiempo
+
+- **Arrastra** clips desde la cuadrícula para añadirlos; **arrastra** los propios clips
+  de la línea de tiempo entre sí para reordenarlos.
+- **Recortar**: abre el mismo reproductor de antes con controles de "Inicio"/"Fin" —
+  reproduce el clip y pulsa "Marcar aquí" en el punto exacto, o escribe los segundos a
+  mano.
+- **Título**: añade un texto (con la fuente del sistema que elijas) y/o una imagen
+  superpuesta (un PNG con transparencia funciona como una máscara/logo) durante los
+  primeros segundos del clip — tú decides cuántos.
+- **✕**: quita el clip de la línea de tiempo (no borra el archivo).
+- **Transición entre clips**: duración en segundos (ajustable, pensada para 2-3s) del
+  fundido cruzado que se aplica automáticamente entre cada clip consecutivo.
+- La duración total estimada del montaje se recalcula sola.
+
+### 5. Exportar
+
+**Exportar montaje final** renderiza el vídeo completo: recorta cada clip, superpone
+los títulos, encadena las transiciones cruzadas, y guarda el resultado en
+`montaje/<nombre del proyecto>_final.mp4` dentro de la carpeta del proyecto. Esto
+**sí recodifica** el vídeo entero (es inevitable para poder unir/mezclar clips) — a
+diferencia del remuxeo, no es sin pérdida.
+
 ## Notas técnicas
 
 - El renombrado por fecha usa `exiftool` (`DateTimeOriginal`, con varios campos de
@@ -126,6 +179,10 @@ archivo). Para la mejor calidad posible, déjala desmarcada.
   real de grabación y no solo por nombre de archivo.
 - El vídeo AVCHD original suele venir entrelazado (1080i); antes de estabilizar se
   desentrelaza (`yadif`).
+- El montaje encadena los clips con los filtros `xfade`/`acrossfade` de ffmpeg (mismo
+  mecanismo que usan editores como Shotcut) y los títulos con `drawtext`/`overlay`;
+  todo en una sola pasada de `ffmpeg` con un grafo de filtros construido según la línea
+  de tiempo.
 
 ## Pendiente (fase 2)
 

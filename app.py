@@ -5,15 +5,28 @@ import platform
 import subprocess
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, abort, jsonify, render_template, request, send_file
 
 from converter.ffmpeg_ops import ToolsMissingError, check_tools
+from converter.fonts import list_system_fonts
 from converter.jobs import get_job, start_job
+from converter.montaje_clips import list_available_clips
+from converter.project import (
+    list_projects,
+    load_project,
+    new_project,
+    project_path,
+    save_project,
+)
 from converter.scanner import scan_folder
 from converter.stabilize import VidstabMissingError, find_ffmpeg_with_vidstab
 from converter.stabilize_jobs import get_job as get_stabilize_job, start_job as start_stabilize_job
+from converter.thumbnails import get_or_create_thumbnail
+from converter.timeline_jobs import get_export_job, start_export
 
 app = Flask(__name__)
+
+_MEDIA_EXTS = {".mp4", ".mov", ".jpg", ".jpeg", ".png", ".gif"}
 
 
 @app.route("/")
@@ -61,6 +74,27 @@ def pick_folder():
     script = (
         'POSIX path of (choose folder with prompt "Selecciona la carpeta de origen" '
         f'default location (POSIX file "{_escape_applescript(str(start_path))}"))'
+    )
+    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if result.returncode != 0:
+        return jsonify({"canceled": True})
+    return jsonify({"path": result.stdout.strip()})
+
+
+@app.route("/api/pick-file", methods=["POST"])
+def pick_file():
+    if platform.system() != "Darwin":
+        return jsonify({"error": "El selector nativo de archivos solo está disponible en macOS."}), 400
+
+    data = request.get_json(silent=True) or {}
+    start_path = Path(data.get("path") or Path.home()).expanduser()
+    if not start_path.is_dir():
+        start_path = Path.home()
+
+    script = (
+        'POSIX path of (choose file with prompt "Selecciona una imagen (PNG con transparencia recomendado)" '
+        f'default location (POSIX file "{_escape_applescript(str(start_path))}") '
+        'of type {"png", "jpg", "jpeg", "gif"})'
     )
     result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
     if result.returncode != 0:
@@ -130,6 +164,129 @@ def stabilize():
 @app.route("/api/stabilize-status/<job_id>")
 def stabilize_status(job_id):
     job = get_stabilize_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/montaje")
+def montaje_page():
+    return render_template("montaje.html", home=str(Path.home()))
+
+
+@app.route("/media")
+def media():
+    raw_path = request.args.get("path", "")
+    path = Path(raw_path).expanduser()
+    if path.suffix.lower() not in _MEDIA_EXTS or not path.is_file():
+        abort(404)
+    return send_file(path, conditional=True)
+
+
+@app.route("/api/montaje/clips")
+def montaje_clips():
+    root = request.args.get("root", "")
+    if not root:
+        return jsonify({"error": "Falta la carpeta de origen"}), 400
+    try:
+        clips = list_available_clips(root)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+    return jsonify({"clips": clips})
+
+
+@app.route("/api/montaje/thumbnail")
+def montaje_thumbnail():
+    root = request.args.get("root", "")
+    clip_path = request.args.get("path", "")
+    if not root or not clip_path:
+        abort(404)
+    try:
+        thumb = get_or_create_thumbnail(Path(root).expanduser().resolve(), Path(clip_path))
+    except Exception:
+        abort(404)
+    return send_file(thumb, conditional=True)
+
+
+@app.route("/api/montaje/fonts")
+def montaje_fonts():
+    return jsonify({"fonts": list_system_fonts()[:80]})
+
+
+@app.route("/api/montaje/projects")
+def montaje_projects():
+    root = request.args.get("root", "")
+    if not root:
+        return jsonify({"error": "Falta la carpeta de origen"}), 400
+    root_path = Path(root).expanduser().resolve()
+    return jsonify({"projects": list_projects(root_path)})
+
+
+@app.route("/api/montaje/project", methods=["GET", "POST", "DELETE"])
+def montaje_project():
+    if request.method == "GET":
+        root = request.args.get("root", "")
+        name = request.args.get("name", "")
+        if not root or not name:
+            return jsonify({"error": "Falta carpeta o nombre de proyecto"}), 400
+        root_path = Path(root).expanduser().resolve()
+        try:
+            return jsonify(load_project(root_path, name))
+        except FileNotFoundError:
+            return jsonify({"error": f"No existe el proyecto '{name}'"}), 404
+
+    if request.method == "DELETE":
+        root = request.args.get("root", "")
+        name = request.args.get("name", "")
+        if not root or not name:
+            return jsonify({"error": "Falta carpeta o nombre de proyecto"}), 400
+        root_path = Path(root).expanduser().resolve()
+        path = project_path(root_path, name)
+        path.unlink(missing_ok=True)
+        return jsonify({"deleted": True})
+
+    data = request.get_json(force=True)
+    root = data.get("root", "")
+    name = data.get("name", "")
+    project = data.get("project")
+    if not root or not name or project is None:
+        return jsonify({"error": "Falta carpeta, nombre o contenido del proyecto"}), 400
+    root_path = Path(root).expanduser().resolve()
+    saved_path = save_project(root_path, name, project)
+    return jsonify({"saved": str(saved_path)})
+
+
+@app.route("/api/montaje/new-project")
+def montaje_new_project():
+    root = request.args.get("root", "")
+    if not root:
+        return jsonify({"error": "Falta la carpeta de origen"}), 400
+    return jsonify(new_project(root))
+
+
+@app.route("/api/montaje/export", methods=["POST"])
+def montaje_export():
+    data = request.get_json(force=True)
+    root = data.get("root")
+    project_name = data.get("name", "montaje")
+    clips = data.get("clips", [])
+    transition_seconds = float(data.get("transition_seconds", 2.0))
+
+    if not root or not clips:
+        return jsonify({"error": "El montaje no tiene clips"}), 400
+
+    try:
+        find_ffmpeg_with_vidstab()
+    except VidstabMissingError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    job_id = start_export(root, project_name, clips, transition_seconds)
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/montaje/export-status/<job_id>")
+def montaje_export_status(job_id):
+    job = get_export_job(job_id)
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)

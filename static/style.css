@@ -36,6 +36,10 @@ header {
 h1 { margin: 0 0 0.25rem; font-size: 1.4rem; }
 .subtitle { margin: 0; color: var(--muted); }
 
+.header-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.back-link { color: var(--muted); text-decoration: none; font-size: 0.9rem; white-space: nowrap; }
+.back-link:hover { color: var(--accent); }
+
 main {
   max-width: 960px;
   margin: 0 auto;
