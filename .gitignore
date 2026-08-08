@@ -1,0 +1,24 @@
+# Contenido personal / generado por la app (vídeos, fotos, salidas de conversión)
+private/
+conversion/
+estabilizado/
+*.MTS
+*.M2TS
+*.mp4
+*.mov
+*.jpg
+*.jpeg
+*.png
+*.heic
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# macOS
+.DS_Store
+
+# Configuración local de Claude Code
+.claude/

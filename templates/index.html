@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Conversor AVCHD</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>Conversor AVCHD → MP4</h1>
+  <p class="subtitle">Remuxeo sin pérdida (sin recompresión de vídeo) y renombrado por fecha de captura.</p>
+</header>
+
+<main>
+  <section id="browser-section">
+    <h2>1. Selecciona la carpeta de origen</h2>
+    <div class="path-row">
+      <input id="path-input" type="text" value="{{ home }}">
+      <button id="go-btn">Ir</button>
+      <button id="browse-btn" class="primary">📁 Explorar…</button>
+    </div>
+    <div id="crumb" class="crumb"></div>
+    <ul id="dir-list" class="dir-list"></ul>
+    <button id="scan-btn" class="primary">Escanear esta carpeta</button>
+    <span id="scan-status" class="status-text"></span>
+  </section>
+
+  <section id="results-section" class="hidden">
+    <h2>2. Elementos detectados</h2>
+    <p id="output-dir-note" class="muted"></p>
+
+    <div class="block">
+      <h3>Vídeos AVCHD (<span id="avchd-count">0</span>)</h3>
+      <table id="avchd-table">
+        <thead><tr>
+          <th>Convertir</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th>
+          <th>Estabilizar</th><th>Estabilización</th>
+        </tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="avchd-empty" class="muted hidden">No se han encontrado clips .MTS/.M2TS en esta carpeta.</p>
+    </div>
+
+    <div class="block">
+      <h3>Fotos (<span id="photo-count">0</span>)</h3>
+      <table id="photo-table">
+        <thead><tr><th></th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="photo-empty" class="muted hidden">No se han encontrado fotos en esta carpeta.</p>
+    </div>
+
+    <div class="block" id="other-block">
+      <h3>Otros vídeos no AVCHD — fase 2, todavía no soportado (<span id="other-count">0</span>)</h3>
+      <ul id="other-list"></ul>
+    </div>
+
+    <div class="options">
+      <label><input type="checkbox" id="transcode-audio"> Recodificar audio AC-3 a AAC (recomendado si no se oye el sonido en el navegador o el móvil; el vídeo siempre se copia sin recompresión)</label>
+      <label><input type="checkbox" id="force"> Forzar reconversión de elementos ya convertidos</label>
+    </div>
+
+    <button id="convert-btn" class="primary">3. Convertir seleccionados</button>
+
+    <div class="options stabilize-options">
+      <p class="muted">Estabilización (opcional, independiente de la conversión): corrige el temblor de la
+      cámara con vid.stab. A diferencia del remuxeo, esto sí recodifica el vídeo y recorta ligeramente
+      los bordes — usa la columna "Estabilizar" de la tabla para marcar qué clips quieres procesar.</p>
+      <label><input type="checkbox" id="force-stabilize"> Forzar reestabilización de clips ya estabilizados</label>
+      <label><input type="checkbox" id="fast-hw"> Modo rápido (codificación por hardware, VideoToolbox)</label>
+      <p class="muted hint">Solo acelera de verdad en Apple Silicon con motor de vídeo dedicado (chips M-series
+      recientes, idealmente M5 o superior) — en otros procesadores puede no estar disponible o no aportar nada.
+      Medido con un clip de prueba: la codificación va ~2 veces más rápida y usa mucha menos CPU, pero el
+      análisis del temblor (la parte que más tarda) no se acelera, así que el ahorro del proceso completo es
+      modesto (~15%, no 2×). La calidad baja ligeramente (VMAF ≈96/100 comparado con el modo normal al mismo
+      tamaño de archivo) — para la mejor calidad posible deja esta casilla desmarcada.</p>
+    </div>
+    <button id="stabilize-btn">4. Estabilizar marcados</button>
+  </section>
+
+  <section id="progress-section" class="hidden">
+    <h2>Progreso de conversión</h2>
+    <table id="progress-table">
+      <thead><tr><th>Origen</th><th>Tipo</th><th>Estado</th><th>Progreso</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="job-summary" class="muted"></p>
+  </section>
+
+  <section id="stabilize-progress-section" class="hidden">
+    <h2>Progreso de estabilización</h2>
+    <table id="stabilize-progress-table">
+      <thead><tr><th>Origen</th><th>Estado</th><th>Progreso</th><th>Estadísticas</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="stabilize-job-summary" class="muted"></p>
+  </section>
+</main>
+
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
