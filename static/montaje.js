@@ -514,6 +514,17 @@ document.getElementById("load-project-btn").addEventListener("click", async () =
   projectStatus.textContent = `Proyecto "${name}" cargado.`;
 });
 
+document.getElementById("delete-project-btn").addEventListener("click", async () => {
+  const name = projectSelect.value;
+  if (!name) return;
+  if (!confirm(`¿Eliminar el proyecto guardado "${name}"? Esto no borra ningún vídeo, solo el proyecto.`)) return;
+  await fetch(`/api/montaje/project?root=${encodeURIComponent(root)}&name=${encodeURIComponent(name)}`, {
+    method: "DELETE",
+  });
+  projectStatus.textContent = `Proyecto "${name}" eliminado.`;
+  loadProjectsList();
+});
+
 document.getElementById("new-project-btn").addEventListener("click", () => {
   timeline = [];
   projectNameInput.value = "Mi montaje";
