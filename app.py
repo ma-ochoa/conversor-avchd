@@ -29,6 +29,7 @@ from converter.stabilize import (
 from converter.stabilize_jobs import get_job as get_stabilize_job, start_job as start_stabilize_job
 from converter.thumbnails import get_or_create_thumbnail
 from converter.timeline_jobs import get_export_job, start_export
+from converter.analyze_jobs import get_analysis_job, start_analysis
 
 app = Flask(__name__)
 
@@ -308,6 +309,33 @@ def montaje_export():
 @app.route("/api/montaje/export-status/<job_id>")
 def montaje_export_status(job_id):
     job = get_export_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/montaje/analyze", methods=["POST"])
+def montaje_analyze():
+    data = request.get_json(force=True)
+    root = data.get("root")
+    path = data.get("path")
+    if not root or not path:
+        return jsonify({"error": "Falta carpeta o clip"}), 400
+
+    try:
+        find_ffmpeg_with_vidstab()
+    except VidstabMissingError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    shakiness = int(_clamp(int(data.get("shakiness", 5)), 1, 10))
+    accuracy = int(_clamp(int(data.get("accuracy", 15)), 1, 15))
+    job_id = start_analysis(root, path, shakiness, accuracy)
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/montaje/analyze-status/<job_id>")
+def montaje_analyze_status(job_id):
+    job = get_analysis_job(job_id)
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)

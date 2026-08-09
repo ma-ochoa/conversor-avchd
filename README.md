@@ -190,12 +190,44 @@ línea de tiempo de más abajo para añadirlo al montaje.
 - **Transición entre clips**: duración en segundos (ajustable, pensada para 2-3s) del
   fundido cruzado que se aplica automáticamente entre cada clip consecutivo.
 - La duración total estimada del montaje se recalcula sola.
+- **Estabilizar**: corrige el temblor de un clip **dentro del propio montaje**, sin
+  generar un fichero estabilizado aparte — ver más abajo.
+
+### Estabilizar un clip dentro del montaje
+
+Botón **"Estabilizar"** en cada clip de la línea de tiempo. A diferencia del botón
+"Estabilizar" de la pantalla principal (que genera un `.mp4` estabilizado independiente
+en `estabilizado/`), esto **no genera ningún vídeo todavía** — solo guarda qué
+corrección aplicar, y esa corrección se aplica **dentro de la exportación final**, en el
+mismo paso que el recorte, el título y las transiciones. Así un clip nunca pasa por dos
+recompresiones con pérdida (estabilizar y luego volver a codificar al exportar el
+montaje): se analiza una vez y se codifica una vez, al final.
+
+1. **Analizar clip** — ejecuta el análisis (la parte lenta, sobre todo en 4K) y lo
+   cachea en `.vidstab_cache/`, compartido con el botón de estabilizar independiente:
+   si ya estabilizaste este mismo clip antes con los mismos parámetros, esto es
+   prácticamente instantáneo.
+2. Con el análisis listo aparece una **vista previa en un lienzo** (sobre una copia
+   ligera del clip, en `.proxies/`, generada automáticamente) — reproduce, pausa o
+   arrastra la barra, y activa o desactiva "con corrección" para comparar.
+3. **Automático** o **Personalizado** (sensibilidad al temblor, suavizado, zoom
+   automático/dinámico/manual) — al cambiar suavizado o zoom, la vista previa se
+   recalcula y redibuja al instante **en el navegador, sin servidor**; solo cambiar la
+   sensibilidad al temblor requiere volver a analizar.
+   - Importante: el zoom que se ve en esta vista previa es una **aproximación**
+     calculada en JavaScript (suavizado con media móvil sobre la trayectoria bruta del
+     análisis) — orienta bien para decidir el ajuste, pero no es idéntico al cálculo
+     real de `vid.stab`, que usa un algoritmo de optimización más sofisticado. El
+     resultado final (al exportar) sí usa el cálculo real.
+4. **Guardar** dentro del panel para dejar esa configuración asociada al clip (badge
+   "🩹 estabilizado" en la línea de tiempo); **Quitar estabilización** para descartarla.
 
 ### 5. Exportar
 
-**Exportar montaje final** renderiza el vídeo completo: recorta cada clip, superpone
-los títulos, encadena las transiciones cruzadas, y guarda el resultado en
-`montaje/<nombre del proyecto>_final.mp4` dentro de la carpeta del proyecto. Esto
+**Exportar montaje final** renderiza el vídeo completo: recorta cada clip, aplica la
+estabilización de los clips que la tengan, superpone los títulos, encadena las
+transiciones cruzadas, y guarda el resultado en `montaje/<nombre del proyecto>_final.mp4`
+dentro de la carpeta del proyecto — todo en una sola pasada de `ffmpeg`. Esto
 **sí recodifica** el vídeo entero (es inevitable para poder unir/mezclar clips) — a
 diferencia del remuxeo, no es sin pérdida.
 
@@ -214,7 +246,14 @@ diferencia del remuxeo, no es sin pérdida.
 - El montaje encadena los clips con los filtros `xfade`/`acrossfade` de ffmpeg (mismo
   mecanismo que usan editores como Shotcut) y los títulos con `drawtext`/`overlay`;
   todo en una sola pasada de `ffmpeg` con un grafo de filtros construido según la línea
-  de tiempo.
+  de tiempo. Cuando un clip tiene estabilización, `vidstabtransform` se inserta en su
+  tramo del grafo, sobre el clip *completo* (no el recorte) — `vid.stab` necesita ver
+  la misma secuencia de fotogramas que analizó, así que el recorte se aplica después.
+- La vista previa de estabilización en el montaje usa `vidstabtransform` con `debug=1`
+  para volcar la trayectoria de cámara detectada, fotograma a fotograma, sin codificar
+  vídeo (mucho más rápido que una pasada completa); el navegador la suaviza y dibuja
+  con `<canvas>` sobre una copia ligera del clip (`.proxies/`), sin ninguna llamada al
+  servidor al mover los sliders de suavizado/zoom.
 
 ## Pendiente (fase 2)
 

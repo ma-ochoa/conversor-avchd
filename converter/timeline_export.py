@@ -1,10 +1,12 @@
 """Construye el filtro ffmpeg de un montaje (recorte por clip, títulos, transiciones
-cruzadas xfade/acrossfade) y renderiza el vídeo final. Esto recodifica siempre."""
+cruzadas xfade/acrossfade, estabilización opcional) y renderiza el vídeo final en un
+único paso. Esto recodifica siempre."""
 
 import re
 import subprocess
 from pathlib import Path
 
+from .stabilize import ensure_analysis
 from .stabilize import find_ffmpeg_with_vidstab as find_ffmpeg_full
 
 _TIME_RE = re.compile(r"out_time_ms=(\d+)")
@@ -27,8 +29,45 @@ def _esc_path(path: str) -> str:
     return path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
 
 
-def build_filter_complex(clips: list, transition_seconds: float, width: int = 1920, height: int = 1080):
-    """clips: lista de dicts {path, in, out, title:{text?,font?,image?,duration?}}.
+def _stab_zoom_args(zoom_mode: str, zoom_percent: float) -> str:
+    if zoom_mode == "manual":
+        return f"optzoom=0:zoom={zoom_percent}"
+    if zoom_mode == "auto_dynamic":
+        return "optzoom=2"
+    return "optzoom=1"
+
+
+def _stab_prefilter(root: Path, clip: dict, progress_cb=None) -> str:
+    """Si el clip trae una estabilización definida, se asegura de que el análisis existe
+    (reutilizando la caché compartida con la estabilización independiente) y devuelve el
+    fragmento de filtro que hay que anteponer — se aplica sobre el clip ENTERO, antes del
+    recorte, porque vid.stab necesita ver la misma secuencia de fotogramas que analizó."""
+    stab = clip.get("stabilize")
+    if not stab:
+        return "yadif=mode=0:deint=interlaced,"
+
+    source = Path(clip["path"]).resolve()
+    shakiness = int(stab.get("shakiness", 5))
+    accuracy = int(stab.get("accuracy", 15))
+    smoothing = int(stab.get("smoothing", 10))
+    zoom_mode = stab.get("zoom_mode", "auto_static")
+    zoom_percent = float(stab.get("zoom_percent", 0.0))
+
+    analysis = ensure_analysis(root, source, shakiness, accuracy, progress_cb)
+    trf_path = _esc_path(str(analysis["trf_path"]))
+    zoom_args = _stab_zoom_args(zoom_mode, zoom_percent)
+
+    return (
+        f"yadif=mode=1:deint=interlaced,"
+        f"vidstabtransform=input={trf_path}:smoothing={smoothing}:{zoom_args}:interpol=bilinear,"
+        "unsharp=5:5:0.8:3:3:0.4,"
+    )
+
+
+def build_filter_complex(clips: list, transition_seconds: float, root: Path = None,
+                          width: int = 1920, height: int = 1080, progress_cb=None):
+    """clips: lista de dicts {path, in, out, title:{text?,font?,image?,duration?},
+    stabilize:{shakiness?,accuracy?,smoothing?,zoom_mode?,zoom_percent?}}.
     Devuelve (input_args, filter_complex, video_label, audio_label)."""
     input_args = []
     for clip in clips:
@@ -41,9 +80,9 @@ def build_filter_complex(clips: list, transition_seconds: float, width: int = 19
     for i, clip in enumerate(clips):
         start, end = clip["in"], clip["out"]
         v_base = f"v{i}base"
+        pre_filter = _stab_prefilter(root, clip, progress_cb) if root is not None else "yadif=mode=0:deint=interlaced,"
         filters.append(
-            f"[{i}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS,"
-            f"yadif=mode=0:deint=interlaced,"
+            f"[{i}:v]{pre_filter}trim=start={start}:end={end},setpts=PTS-STARTPTS,"
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=25,format=yuv420p[{v_base}]"
         )
@@ -112,7 +151,8 @@ def build_filter_complex(clips: list, transition_seconds: float, width: int = 19
     return input_args, ";".join(filters), prev_v, prev_a
 
 
-def export_timeline(clips: list, transition_seconds: float, dest: Path, progress_cb=None) -> None:
+def export_timeline(clips: list, transition_seconds: float, dest: Path, root: Path = None,
+                     progress_cb=None) -> None:
     if not clips:
         raise ValueError("El montaje no tiene ningún clip")
 
@@ -121,7 +161,18 @@ def export_timeline(clips: list, transition_seconds: float, dest: Path, progress
     total_duration -= transition_seconds * max(len(clips) - 1, 0)
     total_duration = max(total_duration, 1)
 
-    input_args, filter_complex, v_label, a_label = build_filter_complex(clips, transition_seconds)
+    has_stabilize = any(c.get("stabilize") for c in clips)
+
+    # El análisis previo (si hace falta) puede tardar bastante y no tiene progreso
+    # fraccionable fiable frente al resto del render, así que se cuenta aparte.
+    def analysis_progress(_fraction):
+        if progress_cb:
+            progress_cb(0.0)
+
+    input_args, filter_complex, v_label, a_label = build_filter_complex(
+        clips, transition_seconds, root=root,
+        progress_cb=analysis_progress if has_stabilize else None,
+    )
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp_dest = dest.with_suffix(dest.suffix + ".part")

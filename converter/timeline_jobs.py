@@ -29,7 +29,9 @@ def start_export(root: str, project_name: str, clips: list, transition_seconds: 
     with _jobs_lock:
         _jobs[job_id] = job
 
-    thread = threading.Thread(target=_run_export, args=(job_id, clips, transition_seconds, dest), daemon=True)
+    thread = threading.Thread(
+        target=_run_export, args=(job_id, clips, transition_seconds, dest, root_path), daemon=True
+    )
     thread.start()
     return job_id
 
@@ -40,14 +42,14 @@ def get_export_job(job_id: str) -> dict | None:
         return dict(job) if job else None
 
 
-def _run_export(job_id: str, clips: list, transition_seconds: float, dest: Path) -> None:
+def _run_export(job_id: str, clips: list, transition_seconds: float, dest: Path, root_path: Path) -> None:
     job = _jobs[job_id]
 
     def progress_cb(fraction):
         job["percent"] = fraction
 
     try:
-        export_timeline(clips, transition_seconds, dest, progress_cb=progress_cb)
+        export_timeline(clips, transition_seconds, dest, root=root_path, progress_cb=progress_cb)
         job["status"] = "completado"
         job["percent"] = 1.0
     except Exception as exc:

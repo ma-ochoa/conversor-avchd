@@ -6,6 +6,7 @@ estabilizado/
 montaje/
 .miniaturas/
 .vidstab_cache/
+.proxies/
 *.MTS
 *.M2TS
 *.mp4

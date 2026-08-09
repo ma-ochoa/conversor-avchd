@@ -13,6 +13,7 @@ import json
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from .ffmpeg_ops import get_duration_seconds
@@ -112,6 +113,11 @@ def _cache_paths(root: Path, source: Path, shakiness: int, accuracy: int) -> tup
     return cache_dir / f"{digest}.trf", cache_dir / f"{digest}.json"
 
 
+def _path_cache_file(root: Path, source: Path, shakiness: int, accuracy: int) -> Path:
+    trf_path, _ = _cache_paths(root, source, shakiness, accuracy)
+    return trf_path.with_suffix(".path.json")
+
+
 def _ensure_transforms(root: Path, source: Path, ffmpeg_bin: str, shakiness: int, accuracy: int,
                         duration: float, progress_cb, progress_start: float, progress_span: float,
                         log_path: Path) -> tuple:
@@ -157,6 +163,117 @@ def _ensure_transforms(root: Path, source: Path, ffmpeg_bin: str, shakiness: int
     }
     meta_path.write_text(json.dumps({"source_size": source_size, "stats": stats}))
     return trf_path, stats, False
+
+
+def ensure_analysis(root: Path, source: Path, shakiness: int = 5, accuracy: int = 15,
+                     progress_cb=None) -> dict:
+    """API pública: se asegura de que existe el análisis (detección) para este clip y
+    estos parámetros, reutilizando la caché si es válida. No genera ningún vídeo."""
+    ffmpeg_bin = find_ffmpeg_with_vidstab()
+    duration = get_duration_seconds(source)
+    with tempfile.TemporaryDirectory() as tmp:
+        log_path = Path(tmp) / "detect.log"
+        trf_path, stats, from_cache = _ensure_transforms(
+            root, source, ffmpeg_bin, shakiness, accuracy, duration, progress_cb, 0.0, 1.0, log_path,
+        )
+    return {
+        "trf_path": trf_path, "stats": stats, "reused": from_cache,
+        "ffmpeg_bin": ffmpeg_bin, "duration": duration,
+    }
+
+
+def _parse_raw_path(dump_path: Path) -> list:
+    frames = []
+    with open(dump_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            try:
+                frames.append({
+                    "dx": float(parts[1]),
+                    "dy": float(parts[2]),
+                    "angle": float(parts[3]),
+                })
+            except ValueError:
+                continue
+    return frames
+
+
+def _probe_video_info(source: Path, ffmpeg_bin: str) -> dict:
+    cmd = [
+        _ffprobe_for(ffmpeg_bin), "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=width,height,r_frame_rate",
+        "-of", "default=noprint_wrappers=1", str(source),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+    info = {}
+    for line in result.stdout.splitlines():
+        if "=" in line:
+            key, _, value = line.partition("=")
+            info[key] = value
+    fps = 25.0
+    if "/" in info.get("r_frame_rate", ""):
+        try:
+            num, den = info["r_frame_rate"].split("/")
+            fps = float(num) / float(den) if float(den) else 25.0
+        except ValueError:
+            pass
+    return {
+        "width": int(info.get("width", 0) or 0),
+        "height": int(info.get("height", 0) or 0),
+        "fps": fps,
+    }
+
+
+def get_preview_analysis(root: Path, source: Path, shakiness: int = 5, accuracy: int = 15,
+                          progress_cb=None) -> dict:
+    """Devuelve la trayectoria de cámara (desplazamiento x/y y ángulo por fotograma,
+    SIN suavizar) para poder previsualizar la estabilización en el navegador aplicando
+    el suavizado/zoom en JavaScript, sin generar ningún vídeo. Se ejecuta y cachea una
+    sola vez por clip+shakiness+accuracy — cambiar el suavizado o el zoom después no
+    requiere volver a llamar a esto."""
+    source = source.resolve()
+    analysis = ensure_analysis(root, source, shakiness, accuracy, progress_cb)
+    ffmpeg_bin = analysis["ffmpeg_bin"]
+    path_cache = _path_cache_file(root, source, shakiness, accuracy)
+
+    if path_cache.exists():
+        try:
+            cached = json.loads(path_cache.read_text())
+            if cached.get("source_size") == source.stat().st_size:
+                return cached["data"]
+        except (json.JSONDecodeError, OSError, KeyError):
+            pass
+
+    with tempfile.TemporaryDirectory() as tmp:
+        work_dir = Path(tmp)
+        dump_path = work_dir / "global_motions.trf"
+        cmd = [
+            ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+            "-i", str(source),
+            "-vf", f"yadif=mode=1:deint=interlaced,vidstabtransform=input={analysis['trf_path']}:debug=1",
+            "-f", "null", "-",
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, cwd=work_dir, timeout=1800)
+        if result.returncode != 0 or not dump_path.exists():
+            raise RuntimeError(f"No se pudo calcular la trayectoria: {result.stderr.strip()[-1000:]}")
+        raw_path = _parse_raw_path(dump_path)
+
+    video_info = _probe_video_info(source, ffmpeg_bin)
+    data = {
+        "path": raw_path,
+        "fps": video_info["fps"],
+        "width": video_info["width"],
+        "height": video_info["height"],
+        "duration": analysis["duration"],
+        "stats": analysis["stats"],
+    }
+    path_cache.write_text(json.dumps({"source_size": source.stat().st_size, "data": data}))
+    return data
 
 
 def _zoom_filter_args(zoom_mode: str, zoom_percent: float) -> str:
