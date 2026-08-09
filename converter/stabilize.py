@@ -118,7 +118,7 @@ def stabilize_clip(source: Path, dest: Path, progress_cb=None, fast_hw: bool = F
         detect_cmd = [
             ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "warning",
             "-i", str(source),
-            "-vf", f"yadif=1,vidstabdetect=shakiness=5:accuracy=15:result={transforms_path}",
+            "-vf", f"yadif=mode=1:deint=interlaced,vidstabdetect=shakiness=5:accuracy=15:result={transforms_path}",
             "-progress", "pipe:1", "-nostats",
             "-f", "null", "-",
         ]
@@ -136,7 +136,7 @@ def stabilize_clip(source: Path, dest: Path, progress_cb=None, fast_hw: bool = F
             ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "info",
             "-i", str(source),
             "-vf",
-            f"yadif=1,vidstabtransform=input={transforms_path}:smoothing=10:optzoom=1:interpol=bilinear,"
+            f"yadif=mode=1:deint=interlaced,vidstabtransform=input={transforms_path}:smoothing=10:optzoom=1:interpol=bilinear,"
             "unsharp=5:5:0.8:3:3:0.4",
             *encoder_args,
             "-c:a", "copy",

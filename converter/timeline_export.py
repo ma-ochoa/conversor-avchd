@@ -43,6 +43,7 @@ def build_filter_complex(clips: list, transition_seconds: float, width: int = 19
         v_base = f"v{i}base"
         filters.append(
             f"[{i}:v]trim=start={start}:end={end},setpts=PTS-STARTPTS,"
+            f"yadif=mode=0:deint=interlaced,"
             f"scale={width}:{height}:force_original_aspect_ratio=decrease,"
             f"pad={width}:{height}:(ow-iw)/2:(oh-ih)/2,fps=25,format=yuv420p[{v_base}]"
         )

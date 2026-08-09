@@ -1,17 +1,20 @@
 # Conversor AVCHD
 
-Interfaz web (Flask, en local) para convertir los clips AVCHD (`.MTS`/`.M2TS`) de una
-cámara/camcorder a MP4 **sin recompresión de vídeo** (solo se cambia el contenedor),
-renombrar vídeos y fotos con su fecha y hora real de captura, estabilizar clips con
-temblor de cámara, y montar un vídeo final (recortes, títulos y transiciones) con un
-mini editor integrado. Pensado para que el resultado se reproduzca sin problemas al
-subirlo a un NAS (Synology Photos, Plex, Emby, etc.) y se vea bien tanto en el móvil
-como en la TV.
+Interfaz web (Flask, en local) para convertir los clips de vídeo de una cámara/camcorder
+(AVCHD `.MTS`/`.M2TS`, y también `.mp4`/`.mov` — incluido 4K) a MP4 **sin recompresión de
+vídeo** (solo se cambia el contenedor), renombrar vídeos y fotos con su fecha y hora real
+de captura, estabilizar clips con temblor de cámara, y montar un vídeo final (recortes,
+títulos y transiciones) con un mini editor integrado. Pensado para que el resultado se
+reproduzca sin problemas al subirlo a un NAS (Synology Photos, Plex, Emby, etc.) y se vea
+bien tanto en el móvil como en la TV.
 
 ## Funciones
 
-- **Remuxeo sin pérdida**: copia el vídeo H.264 bit a bit, solo cambia el contenedor
-  de `.MTS` a `.mp4`. No hay recompresión ni pérdida de calidad.
+- **Remuxeo sin pérdida**: copia el vídeo H.264 bit a bit, solo cambia el contenedor a
+  `.mp4` — vale tanto para AVCHD (`.MTS`/`.M2TS`) como para cámaras que ya graban en
+  `.mp4`/`.mov` (incluido 4K), cuyo audio (a menudo PCM sin comprimir) puede necesitar el
+  mismo recodificado opcional a AAC que el AC-3 de AVCHD. No hay recompresión ni pérdida
+  de calidad de vídeo en ningún caso.
 - **Renombrado por fecha de captura**: tanto vídeos como fotos se renombran a
   `AAAAMMDD_HHMMSS.ext` usando la fecha real leída de los metadatos (con `exiftool`),
   no la fecha de copia del archivo.
@@ -70,27 +73,29 @@ otros equipos de la red).
 
 Escribe la ruta directamente, navega con la lista de carpetas, o pulsa **📁 Explorar…**
 para usar el selector nativo de macOS. Debe ser una carpeta que contenga (en cualquier
-subcarpeta) la estructura `AVCHD/BDMV/STREAM` de la cámara — por ejemplo, la tarjeta SD
-montada, o una copia de la carpeta `PRIVATE` de la cámara.
+subcarpeta) la estructura `AVCHD/BDMV/STREAM` de la cámara, o los `.mp4`/`.mov` de una
+tarjeta SD (por ejemplo la carpeta `PRIVATE/M4ROOT/CLIP` de una cámara Sony) — por
+ejemplo, la tarjeta SD montada tal cual, o una copia de esas carpetas.
 
 ### 2. Escanear
 
 Pulsa **Escanear esta carpeta**. La app busca de forma recursiva:
 
-- **Vídeos AVCHD** (`.MTS`/`.M2TS`) — con su fecha de captura y el nombre que tendrán al
-  convertir.
+- **Vídeos** (`.MTS`, `.M2TS`, `.mp4`, `.mov`, `.m4v` — incluido 4K) — con su fecha de
+  captura y el nombre que tendrán al convertir.
 - **Fotos** (`.jpg`, `.jpeg`, `.png`, `.heic`, `.heif`, `.tif`, `.tiff`) — mismo criterio
   de fecha/renombrado, sin conversión (se copian tal cual).
-- **Otros vídeos** no AVCHD (`.mp4`, `.mov`, etc.) — se listan pero de momento no se
+- **Otros formatos** (`.avi`, `.mkv`, `.wmv`, `.3gp`) — se listan pero de momento no se
   procesan (ver [Pendiente](#pendiente-fase-2)).
 
 ### 3. Convertir
 
 Marca los clips/fotos que quieras y pulsa **Convertir seleccionados**. El resultado se
 guarda en una carpeta `conversion/` dentro de la carpeta de origen, lista para subir al
-NAS. Si el audio del vídeo es AC-3 y no se oye en el navegador o el móvil, marca
-**"Recodificar audio AC-3 a AAC"** — solo afecta al audio, el vídeo se sigue copiando
-sin recomprimir.
+NAS. Si el audio del vídeo no se oye en el navegador o el móvil (AC-3 en AVCHD, o PCM sin
+comprimir en muchas cámaras que graban directamente en `.mp4`/`.mov`), marca
+**"Recodificar audio a AAC si no es compatible"** — solo afecta al audio, el vídeo se
+sigue copiando sin recomprimir en cualquier caso.
 
 Las conversiones ya hechas se recuerdan (`conversion/.manifest.json`): puedes reescanear
 la misma carpeta tras grabar más clips sin reconvertir lo ya hecho, salvo que actives
@@ -98,10 +103,19 @@ la misma carpeta tras grabar más clips sin reconvertir lo ya hecho, salvo que a
 
 ### 4. Estabilizar (opcional)
 
-En la tabla de vídeos AVCHD hay una columna **"Estabilizar"** aparte de la de convertir —
+En la tabla de vídeos hay una columna **"Estabilizar"** aparte de la de convertir —
 marca ahí los clips con temblor de cámara y pulsa **Estabilizar marcados**. El resultado
 se guarda en una carpeta `estabilizado/` (independiente de `conversion/`), y muestra
 estadísticas de cuánto ha tenido que corregir:
+
+> **Aviso sobre 4K**: la estabilización analiza y corrige a la resolución original del
+> vídeo — es lo que garantiza que la corrección sea correcta (reducir la resolución solo
+> para analizar más rápido da una corrección más débil de lo que parece, lo comprobé
+> antes de descartarlo). En 4K esto es bastante más lento que en 1080p (varias veces más
+> lento, no proporcional al tamaño del archivo sino a los píxeles por fotograma) — cuenta
+> con que un clip 4K de varios minutos puede tardar bastante más que uno equivalente en
+> 1080p. El remuxeo (convertir, sin estabilizar) no tiene este problema: es igual de
+> rápido en 4K que en cualquier otra resolución, porque no recodifica.
 
 - **Recorte/zoom**: cuánto ha tenido que ampliar y recortar el fotograma para tapar los
   bordes que deja la corrección — es la medida de cuánto encuadre se "pierde". Cuanto
@@ -177,8 +191,10 @@ diferencia del remuxeo, no es sin pérdida.
 - Al convertir, la fecha de captura también se graba en los metadatos internos del MP4
   (`creation_time`), para que apps como Synology Photos, Plex o Emby ordenen por fecha
   real de grabación y no solo por nombre de archivo.
-- El vídeo AVCHD original suele venir entrelazado (1080i); antes de estabilizar se
-  desentrelaza (`yadif`).
+- El vídeo AVCHD original suele venir entrelazado (1080i), mientras que el `.mp4`/`.mov`
+  de cámaras más modernas (incluido el 4K) suele venir progresivo. Estabilizar y montar
+  detectan esto automáticamente (`yadif` con `deint=interlaced`) y solo desentrelazan
+  cuando hace falta, así que se pueden mezclar clips de ambos orígenes sin problema.
 - El montaje encadena los clips con los filtros `xfade`/`acrossfade` de ffmpeg (mismo
   mecanismo que usan editores como Shotcut) y los títulos con `drawtext`/`overlay`;
   todo en una sola pasada de `ffmpeg` con un grafo de filtros construido según la línea
@@ -186,6 +202,9 @@ diferencia del remuxeo, no es sin pérdida.
 
 ## Pendiente (fase 2)
 
-De momento solo se convierten y estabilizan clips AVCHD. La pantalla ya lista, bajo
-"Otros vídeos", cualquier vídeo en otro formato (MP4, MOV, etc.) que encuentre en la
-carpeta, para una futura fase en la que también se recompriman/normalicen esos formatos.
+Se convierten y estabilizan vídeos AVCHD (`.MTS`/`.M2TS`) y de la familia MP4/MOV
+(`.mp4`, `.mov`, `.m4v`, incluido 4K). La pantalla ya lista, bajo "Otros formatos",
+cualquier vídeo en un contenedor distinto (`.avi`, `.mkv`, `.wmv`, `.3gp`) que encuentre
+en la carpeta, para una futura fase en la que también se recompriman/normalicen esos
+formatos — no se han probado todavía y podrían tener códecs que ffmpeg no maneje igual
+de bien.

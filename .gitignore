@@ -1,5 +1,6 @@
 # Contenido personal / generado por la app (vídeos, fotos, salidas de conversión)
 private/
+DCIM/
 conversion/
 estabilizado/
 montaje/
@@ -8,10 +9,15 @@ montaje/
 *.M2TS
 *.mp4
 *.mov
+*.m4v
 *.jpg
 *.jpeg
 *.png
 *.heic
+*.heif
+*.tif
+*.tiff
+*.CTG
 
 # Python
 __pycache__/

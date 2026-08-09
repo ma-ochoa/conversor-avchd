@@ -112,6 +112,13 @@ function baseRowCells(item, ext) {
 
   const nameTd = document.createElement("td");
   nameTd.textContent = item.relative;
+  if (item.format) {
+    const fmt = document.createElement("span");
+    fmt.className = "tag";
+    fmt.style.marginLeft = "0.4rem";
+    fmt.textContent = item.format;
+    nameTd.appendChild(fmt);
+  }
 
   const dateTd = document.createElement("td");
   dateTd.textContent = formatDate(item.capture_dt) + (item.date_source === "archivo" ? " (fecha de archivo)" : "");

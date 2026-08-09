@@ -36,7 +36,7 @@
     <p id="output-dir-note" class="muted"></p>
 
     <div class="block">
-      <h3>Vídeos AVCHD (<span id="avchd-count">0</span>)</h3>
+      <h3>Vídeos (<span id="avchd-count">0</span>)</h3>
       <table id="avchd-table">
         <thead><tr>
           <th>Convertir</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th>
@@ -44,7 +44,7 @@
         </tr></thead>
         <tbody></tbody>
       </table>
-      <p id="avchd-empty" class="muted hidden">No se han encontrado clips .MTS/.M2TS en esta carpeta.</p>
+      <p id="avchd-empty" class="muted hidden">No se han encontrado vídeos (.MTS/.M2TS/.mp4/.mov) en esta carpeta.</p>
     </div>
 
     <div class="block">
@@ -57,12 +57,12 @@
     </div>
 
     <div class="block" id="other-block">
-      <h3>Otros vídeos no AVCHD — fase 2, todavía no soportado (<span id="other-count">0</span>)</h3>
+      <h3>Otros formatos (.avi, .mkv, .wmv, .3gp) — todavía no soportados (<span id="other-count">0</span>)</h3>
       <ul id="other-list"></ul>
     </div>
 
     <div class="options">
-      <label><input type="checkbox" id="transcode-audio"> Recodificar audio AC-3 a AAC (recomendado si no se oye el sonido en el navegador o el móvil; el vídeo siempre se copia sin recompresión)</label>
+      <label><input type="checkbox" id="transcode-audio"> Recodificar audio a AAC si no es compatible (AC-3, PCM…) — recomendado si no se oye el sonido en el navegador o el móvil; el vídeo siempre se copia sin recompresión</label>
       <label><input type="checkbox" id="force"> Forzar reconversión de elementos ya convertidos</label>
     </div>
 

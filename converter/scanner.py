@@ -1,4 +1,4 @@
-"""Recorre una carpeta buscando clips AVCHD, fotos y otros vídeos (fase 2)."""
+"""Recorre una carpeta buscando vídeos, fotos y formatos aún no soportados."""
 
 import os
 from pathlib import Path
@@ -7,8 +7,10 @@ from .metadata import get_capture_datetime
 from .manifest import load_manifest
 
 AVCHD_EXTS = {".mts", ".m2ts"}
+MP4_FAMILY_EXTS = {".mp4", ".mov", ".m4v"}
+VIDEO_EXTS = AVCHD_EXTS | MP4_FAMILY_EXTS
 PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff"}
-OTHER_VIDEO_EXTS = {".mp4", ".mov", ".avi", ".mkv", ".wmv", ".m4v", ".3gp"}
+OTHER_VIDEO_EXTS = {".avi", ".mkv", ".wmv", ".3gp"}
 
 OUTPUT_DIR_NAME = "conversion"
 STABILIZE_DIR_NAME = "estabilizado"
@@ -24,6 +26,21 @@ def _iter_files(root: Path):
             if name.startswith("."):
                 continue
             yield Path(dirpath) / name
+
+
+def _processed_entry(manifest: dict, dir_name: str, root_path: Path, file_path: Path, size: int) -> dict:
+    entry = manifest.get(str(file_path))
+    done = bool(
+        entry
+        and entry.get("size") == size
+        and entry.get("output")
+        and (root_path / dir_name / entry["output"]).exists()
+    )
+    return {
+        "done": done,
+        "output_name": entry.get("output") if done else None,
+        "stats": entry.get("stats") if done else None,
+    }
 
 
 def scan_folder(root: str) -> dict:
@@ -45,22 +62,10 @@ def scan_folder(root: str) -> dict:
         except OSError:
             continue
 
-        if ext in AVCHD_EXTS:
+        if ext in VIDEO_EXTS:
             dt, source = get_capture_datetime(file_path, is_video=True)
-            entry = manifest.get(str(file_path))
-            already_done = bool(
-                entry
-                and entry.get("size") == size
-                and entry.get("output")
-                and (root_path / OUTPUT_DIR_NAME / entry["output"]).exists()
-            )
-            stab_entry = stabilize_manifest.get(str(file_path))
-            already_stabilized = bool(
-                stab_entry
-                and stab_entry.get("size") == size
-                and stab_entry.get("output")
-                and (root_path / STABILIZE_DIR_NAME / stab_entry["output"]).exists()
-            )
+            conv = _processed_entry(manifest, OUTPUT_DIR_NAME, root_path, file_path, size)
+            stab = _processed_entry(stabilize_manifest, STABILIZE_DIR_NAME, root_path, file_path, size)
             avchd_clips.append(
                 {
                     "path": str(file_path),
@@ -68,22 +73,17 @@ def scan_folder(root: str) -> dict:
                     "size": size,
                     "capture_dt": dt.isoformat(),
                     "date_source": source,
-                    "already_converted": already_done,
-                    "output_name": entry.get("output") if already_done else None,
-                    "already_stabilized": already_stabilized,
-                    "stabilize_output_name": stab_entry.get("output") if already_stabilized else None,
-                    "stabilize_stats": stab_entry.get("stats") if already_stabilized else None,
+                    "format": ext.lstrip("."),
+                    "already_converted": conv["done"],
+                    "output_name": conv["output_name"],
+                    "already_stabilized": stab["done"],
+                    "stabilize_output_name": stab["output_name"],
+                    "stabilize_stats": stab["stats"],
                 }
             )
         elif ext in PHOTO_EXTS:
             dt, source = get_capture_datetime(file_path, is_video=False)
-            entry = manifest.get(str(file_path))
-            already_done = bool(
-                entry
-                and entry.get("size") == size
-                and entry.get("output")
-                and (root_path / OUTPUT_DIR_NAME / entry["output"]).exists()
-            )
+            conv = _processed_entry(manifest, OUTPUT_DIR_NAME, root_path, file_path, size)
             photos.append(
                 {
                     "path": str(file_path),
@@ -91,8 +91,8 @@ def scan_folder(root: str) -> dict:
                     "size": size,
                     "capture_dt": dt.isoformat(),
                     "date_source": source,
-                    "already_converted": already_done,
-                    "output_name": entry.get("output") if already_done else None,
+                    "already_converted": conv["done"],
+                    "output_name": conv["output_name"],
                 }
             )
         elif ext in OTHER_VIDEO_EXTS:
