@@ -19,7 +19,13 @@ from converter.project import (
     save_project,
 )
 from converter.scanner import scan_folder
-from converter.stabilize import VidstabMissingError, find_ffmpeg_with_vidstab
+from converter.stabilize import (
+    ZOOM_AUTO_DYNAMIC,
+    ZOOM_AUTO_STATIC,
+    ZOOM_MANUAL,
+    VidstabMissingError,
+    find_ffmpeg_with_vidstab,
+)
 from converter.stabilize_jobs import get_job as get_stabilize_job, start_job as start_stabilize_job
 from converter.thumbnails import get_or_create_thumbnail
 from converter.timeline_jobs import get_export_job, start_export
@@ -141,6 +147,10 @@ def status(job_id):
     return jsonify(job)
 
 
+def _clamp(value, lo, hi):
+    return max(lo, min(hi, value))
+
+
 @app.route("/api/stabilize", methods=["POST"])
 def stabilize():
     data = request.get_json(force=True)
@@ -157,7 +167,18 @@ def stabilize():
     except VidstabMissingError as exc:
         return jsonify({"error": str(exc)}), 500
 
-    job_id = start_stabilize_job(root, avchd_paths, force, fast_hw)
+    zoom_mode = data.get("zoom_mode", ZOOM_AUTO_STATIC)
+    if zoom_mode not in (ZOOM_AUTO_STATIC, ZOOM_AUTO_DYNAMIC, ZOOM_MANUAL):
+        zoom_mode = ZOOM_AUTO_STATIC
+    params = {
+        "shakiness": int(_clamp(int(data.get("shakiness", 5)), 1, 10)),
+        "accuracy": int(_clamp(int(data.get("accuracy", 15)), 1, 15)),
+        "smoothing": int(_clamp(int(data.get("smoothing", 10)), 0, 100)),
+        "zoom_mode": zoom_mode,
+        "zoom_percent": _clamp(float(data.get("zoom_percent", 0.0)), -50.0, 50.0),
+    }
+
+    job_id = start_stabilize_job(root, avchd_paths, force, fast_hw, params)
     return jsonify({"job_id": job_id})
 
 

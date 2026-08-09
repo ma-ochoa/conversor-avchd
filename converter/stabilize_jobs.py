@@ -9,17 +9,27 @@ from pathlib import Path
 from .manifest import load_manifest, record_entry
 from .metadata import get_capture_datetime
 from .naming import unique_name
-from .stabilize import stabilize_clip
+from .stabilize import ZOOM_AUTO_STATIC, stabilize_clip
 
 OUTPUT_DIR_NAME = "estabilizado"
 
 _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
+_DEFAULT_PARAMS = {
+    "shakiness": 5,
+    "accuracy": 15,
+    "smoothing": 10,
+    "zoom_mode": ZOOM_AUTO_STATIC,
+    "zoom_percent": 0.0,
+}
 
-def start_job(root: str, avchd_paths: list[str], force: bool, fast_hw: bool = False) -> str:
+
+def start_job(root: str, avchd_paths: list[str], force: bool, fast_hw: bool = False,
+              params: dict | None = None) -> str:
     root_path = Path(root).expanduser().resolve()
     job_id = uuid.uuid4().hex
+    stab_params = {**_DEFAULT_PARAMS, **(params or {})}
 
     items = [
         {
@@ -46,7 +56,9 @@ def start_job(root: str, avchd_paths: list[str], force: bool, fast_hw: bool = Fa
     with _jobs_lock:
         _jobs[job_id] = job
 
-    thread = threading.Thread(target=_run_job, args=(job_id, root_path, force, fast_hw), daemon=True)
+    thread = threading.Thread(
+        target=_run_job, args=(job_id, root_path, force, fast_hw, stab_params), daemon=True
+    )
     thread.start()
     return job_id
 
@@ -57,7 +69,7 @@ def get_job(job_id: str) -> dict | None:
         return dict(job) if job else None
 
 
-def _run_job(job_id: str, root_path: Path, force: bool, fast_hw: bool = False) -> None:
+def _run_job(job_id: str, root_path: Path, force: bool, fast_hw: bool, stab_params: dict) -> None:
     output_dir = root_path / OUTPUT_DIR_NAME
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -92,7 +104,9 @@ def _run_job(job_id: str, root_path: Path, force: bool, fast_hw: bool = False) -
             def progress_cb(fraction, item=item):
                 item["percent"] = fraction
 
-            stats = stabilize_clip(source, dest, progress_cb=progress_cb, fast_hw=fast_hw)
+            stats = stabilize_clip(
+                source, dest, root_path, progress_cb=progress_cb, fast_hw=fast_hw, **stab_params
+            )
 
             timestamp = capture_dt.timestamp()
             os.utime(dest, (timestamp, timestamp))

@@ -80,6 +80,38 @@
       análisis del temblor (la parte que más tarda) no se acelera, así que el ahorro del proceso completo es
       modesto (~15%, no 2×). La calidad baja ligeramente (VMAF ≈96/100 comparado con el modo normal al mismo
       tamaño de archivo) — para la mejor calidad posible deja esta casilla desmarcada.</p>
+
+      <div class="stab-mode-row">
+        <label><input type="radio" name="stab-mode" id="stab-mode-auto" value="auto" checked> Automático (recomendado)</label>
+        <label><input type="radio" name="stab-mode" id="stab-mode-custom" value="custom"> Personalizado</label>
+      </div>
+
+      <div id="stab-custom-panel" class="stab-custom-panel hidden">
+        <label>Sensibilidad al temblor: <span id="shakiness-value">5</span>/10
+          <input type="range" id="shakiness" min="1" max="10" step="1" value="5">
+        </label>
+        <p class="muted hint">Cuánto asume la detección que tiembla la cámara al buscar el movimiento. Más alto
+        busca temblor más fuerte/rápido, pero es más lento de analizar.</p>
+
+        <label>Suavizado: <span id="smoothing-value">10</span>
+          <input type="range" id="smoothing" min="0" max="50" step="1" value="10">
+        </label>
+        <p class="muted hint">Cuántos fotogramas alrededor se usan para suavizar el movimiento de cámara. Más alto
+        da un resultado más "flotante"/cinematográfico, pero necesita más zoom para compensar.</p>
+
+        <label>Zoom / recorte
+          <select id="zoom-mode">
+            <option value="auto_static">Automático — recorte fijo mínimo para todo el vídeo (el habitual)</option>
+            <option value="auto_dynamic">Automático dinámico — el recorte varía según haga falta en cada momento</option>
+            <option value="manual">Manual — tú eliges el porcentaje de zoom, como en Pinnacle</option>
+          </select>
+        </label>
+        <label id="zoom-percent-row" class="hidden">Zoom manual: <span id="zoom-percent-value">10</span>%
+          <input type="range" id="zoom-percent" min="0" max="50" step="1" value="10">
+        </label>
+        <p class="muted hint">Al reprocesar el mismo clip cambiando solo estos parámetros no hace falta repetir
+        el análisis (que es la parte lenta) — solo cambiar shakiness o forzar un nuevo análisis lo repite.</p>
+      </div>
     </div>
     <button id="stabilize-btn">4. Estabilizar marcados</button>
   </section>

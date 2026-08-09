@@ -126,6 +126,22 @@ estadísticas de cuánto ha tenido que corregir:
 También se recuerda lo ya estabilizado (`estabilizado/.manifest.json`), con la misma
 opción de forzar.
 
+**Automático vs. personalizado**: por defecto la app usa unos parámetros estándar
+(equivalente a "automático" en Pinnacle — recorte mínimo para tapar los bordes). Si
+marcas **"Personalizado"** puedes ajustar:
+
+- **Sensibilidad al temblor**: cuánto asume el análisis que tiembla la cámara.
+- **Suavizado**: cuántos fotogramas se usan para suavizar el movimiento — más alto da un
+  resultado más "flotante", pero necesita más recorte.
+- **Zoom/recorte**: automático (fijo para todo el vídeo), automático dinámico (varía
+  según haga falta en cada momento) o **manual** — tú eliges el porcentaje exacto de
+  zoom, igual que el control de Pinnacle.
+
+El análisis (la parte lenta) se cachea por clip (`.vidstab_cache/`): si solo cambias el
+suavizado o el zoom y vuelves a procesar el mismo clip, no hace falta repetirlo — solo
+la fase de corrección, mucho más rápida. Cambiar la sensibilidad al temblor sí invalida
+la caché y repite el análisis.
+
 **Modo rápido (VideoToolbox)**: casilla opcional que usa el motor de vídeo del chip en
 vez de codificar por software. Solo acelera de verdad en Apple Silicon con motor de
 vídeo dedicado (chips M-series recientes, idealmente M5 o superior) — en otro hardware

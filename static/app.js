@@ -49,6 +49,8 @@ function formatStats(stats) {
   if (stats.confidence_percent != null) {
     parts.push(`confianza de seguimiento: ${stats.confidence_percent}% (${stats.low_contrast_frames}/${stats.total_frames} fotogramas con poco contraste)`);
   }
+  if (stats.mode) parts.push(`modo ${stats.mode}`);
+  if (stats.reused_analysis) parts.push("análisis reutilizado (rápido)");
   if (stats.encoder) parts.push(stats.encoder);
   return parts.length ? parts.join(" · ") : "—";
 }
@@ -318,6 +320,39 @@ async function pollJob(jobId) {
   setTimeout(() => pollJob(jobId), 800);
 }
 
+const stabCustomPanel = document.getElementById("stab-custom-panel");
+const zoomModeSelect = document.getElementById("zoom-mode");
+const zoomPercentRow = document.getElementById("zoom-percent-row");
+
+document.querySelectorAll('input[name="stab-mode"]').forEach((radio) => {
+  radio.addEventListener("change", () => {
+    stabCustomPanel.classList.toggle("hidden", document.getElementById("stab-mode-auto").checked);
+  });
+});
+
+["shakiness", "smoothing", "zoom-percent"].forEach((id) => {
+  const input = document.getElementById(id);
+  const label = document.getElementById(`${id}-value`);
+  input.addEventListener("input", () => (label.textContent = input.value));
+});
+
+zoomModeSelect.addEventListener("change", () => {
+  zoomPercentRow.classList.toggle("hidden", zoomModeSelect.value !== "manual");
+});
+
+function stabilizeParams() {
+  if (document.getElementById("stab-mode-auto").checked) {
+    return { shakiness: 5, accuracy: 15, smoothing: 10, zoom_mode: "auto_static", zoom_percent: 0 };
+  }
+  return {
+    shakiness: parseInt(document.getElementById("shakiness").value, 10),
+    accuracy: 15,
+    smoothing: parseInt(document.getElementById("smoothing").value, 10),
+    zoom_mode: zoomModeSelect.value,
+    zoom_percent: parseFloat(document.getElementById("zoom-percent").value),
+  };
+}
+
 stabilizeBtn.addEventListener("click", async () => {
   if (!lastScan) return;
   const avchdPaths = selectedPaths(avchdBody, ".select-stabilize:checked");
@@ -333,7 +368,10 @@ stabilizeBtn.addEventListener("click", async () => {
   const res = await fetch("/api/stabilize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ root: lastScan.root, avchd_paths: avchdPaths, force: force, fast_hw: fastHw }),
+    body: JSON.stringify({
+      root: lastScan.root, avchd_paths: avchdPaths, force: force, fast_hw: fastHw,
+      ...stabilizeParams(),
+    }),
   });
   const data = await res.json();
   if (data.error) {

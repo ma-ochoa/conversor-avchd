@@ -5,6 +5,7 @@ conversion/
 estabilizado/
 montaje/
 .miniaturas/
+.vidstab_cache/
 *.MTS
 *.M2TS
 *.mp4
