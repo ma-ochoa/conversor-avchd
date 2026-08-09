@@ -7,16 +7,7 @@ const scanBtn = document.getElementById("scan-btn");
 const scanStatus = document.getElementById("scan-status");
 
 const resultsSection = document.getElementById("results-section");
-const outputDirNote = document.getElementById("output-dir-note");
 const avchdBody = document.querySelector("#avchd-table tbody");
-const photoBody = document.querySelector("#photo-table tbody");
-const otherList = document.getElementById("other-list");
-const otherBlock = document.getElementById("other-block");
-
-const convertBtn = document.getElementById("convert-btn");
-const progressSection = document.getElementById("progress-section");
-const progressBody = document.querySelector("#progress-table tbody");
-const jobSummary = document.getElementById("job-summary");
 
 const stabilizeBtn = document.getElementById("stabilize-btn");
 const stabilizeProgressSection = document.getElementById("stabilize-progress-section");
@@ -34,12 +25,6 @@ function formatBytes(bytes) {
 function formatDate(iso) {
   const d = new Date(iso);
   return d.toLocaleString("es-ES");
-}
-
-function outputName(iso, ext) {
-  const d = new Date(iso);
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`;
 }
 
 function formatStats(stats) {
@@ -65,6 +50,7 @@ async function loadDirs(path) {
   pathInput.value = data.path;
   crumb.textContent = data.path;
   dirList.innerHTML = "";
+  rememberRoot(data.path);
 
   if (data.parent) {
     const up = document.createElement("li");
@@ -103,12 +89,14 @@ browseBtn.addEventListener("click", async () => {
 
 loadDirs(pathInput.value);
 
-function baseRowCells(item, ext) {
+function renderRow(item) {
+  const tr = document.createElement("tr");
+
   const cbTd = document.createElement("td");
   const cb = document.createElement("input");
   cb.type = "checkbox";
-  cb.className = "select-convert";
-  cb.checked = !item.already_converted;
+  cb.className = "select-stabilize";
+  cb.checked = !item.already_stabilized;
   cb.dataset.path = item.path;
   cbTd.appendChild(cb);
 
@@ -128,62 +116,28 @@ function baseRowCells(item, ext) {
   const sizeTd = document.createElement("td");
   sizeTd.textContent = formatBytes(item.size);
 
-  const destTd = document.createElement("td");
-  destTd.textContent = item.already_converted ? item.output_name : outputName(item.capture_dt, ext);
-
   const statusTd = document.createElement("td");
-  if (item.already_converted) {
-    const span = document.createElement("span");
-    span.className = "tag done";
-    span.textContent = "ya convertido";
-    statusTd.appendChild(span);
-  }
-
-  return { cbTd, cb, nameTd, dateTd, sizeTd, destTd, statusTd };
-}
-
-function renderRow(item, ext) {
-  const tr = document.createElement("tr");
-  const cells = baseRowCells(item, ext);
-  tr.append(cells.cbTd, cells.nameTd, cells.dateTd, cells.sizeTd, cells.destTd, cells.statusTd);
-  return tr;
-}
-
-function renderAvchdRow(item) {
-  const tr = document.createElement("tr");
-  const cells = baseRowCells(item, ".mp4");
-  tr.append(cells.cbTd, cells.nameTd, cells.dateTd, cells.sizeTd, cells.destTd, cells.statusTd);
-
-  const stabCbTd = document.createElement("td");
-  const stabCb = document.createElement("input");
-  stabCb.type = "checkbox";
-  stabCb.className = "select-stabilize";
-  stabCb.checked = !item.already_stabilized;
-  stabCb.dataset.path = item.path;
-  stabCbTd.appendChild(stabCb);
-  tr.appendChild(stabCbTd);
-
-  const statsTd = document.createElement("td");
-  statsTd.dataset.statsCell = "1";
+  statusTd.dataset.statsCell = "1";
   if (item.already_stabilized) {
     const span = document.createElement("span");
     span.className = "tag done";
     span.textContent = "ya estabilizado";
-    statsTd.appendChild(span);
-    statsTd.appendChild(document.createElement("br"));
-    statsTd.appendChild(document.createTextNode(formatStats(item.stabilize_stats)));
+    statusTd.appendChild(span);
+    statusTd.appendChild(document.createElement("br"));
+    statusTd.appendChild(document.createTextNode(formatStats(item.stabilize_stats)));
   } else {
-    statsTd.textContent = "—";
+    statusTd.textContent = "—";
   }
-  tr.appendChild(statsTd);
 
+  tr.append(cbTd, nameTd, dateTd, sizeTd, statusTd);
   return tr;
 }
 
 scanBtn.addEventListener("click", async () => {
   scanStatus.textContent = "Escaneando…";
   resultsSection.classList.add("hidden");
-  progressSection.classList.add("hidden");
+  stabilizeProgressSection.classList.add("hidden");
+  rememberRoot(pathInput.value);
 
   const res = await fetch("/api/scan", {
     method: "POST",
@@ -197,127 +151,17 @@ scanBtn.addEventListener("click", async () => {
   }
   scanStatus.textContent = "";
   lastScan = data;
-
-  document.getElementById("avchd-count").textContent = data.avchd_clips.length;
-  document.getElementById("photo-count").textContent = data.photos.length;
-  document.getElementById("other-count").textContent = data.other_videos.length;
-  outputDirNote.textContent = `Los ficheros convertidos se guardarán en: ${data.output_dir}`;
+  rememberRoot(data.root);
 
   avchdBody.innerHTML = "";
-  data.avchd_clips.forEach((item) => avchdBody.appendChild(renderAvchdRow(item)));
+  data.avchd_clips.forEach((item) => avchdBody.appendChild(renderRow(item)));
   document.getElementById("avchd-empty").classList.toggle("hidden", data.avchd_clips.length > 0);
-
-  photoBody.innerHTML = "";
-  data.photos.forEach((item) => {
-    const ext = item.relative.slice(item.relative.lastIndexOf(".")).toLowerCase();
-    photoBody.appendChild(renderRow(item, ext));
-  });
-  document.getElementById("photo-empty").classList.toggle("hidden", data.photos.length > 0);
-
-  otherList.innerHTML = "";
-  otherBlock.classList.toggle("hidden", data.other_videos.length === 0);
-  data.other_videos.forEach((item) => {
-    const li = document.createElement("li");
-    li.textContent = `${item.relative} (${formatBytes(item.size)})`;
-    otherList.appendChild(li);
-  });
 
   resultsSection.classList.remove("hidden");
 });
 
-function selectedPaths(tbody, selector = 'input[type="checkbox"]:checked') {
+function selectedPaths(tbody, selector) {
   return Array.from(tbody.querySelectorAll(selector)).map((cb) => cb.dataset.path);
-}
-
-convertBtn.addEventListener("click", async () => {
-  if (!lastScan) return;
-  const avchdPaths = selectedPaths(avchdBody, ".select-convert:checked");
-  const photoPaths = selectedPaths(photoBody);
-  if (avchdPaths.length === 0 && photoPaths.length === 0) {
-    scanStatus.textContent = "No hay elementos seleccionados.";
-    return;
-  }
-
-  convertBtn.disabled = true;
-  const transcodeAudio = document.getElementById("transcode-audio").checked;
-  const force = document.getElementById("force").checked;
-
-  const res = await fetch("/api/convert", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      root: lastScan.root,
-      avchd_paths: avchdPaths,
-      photo_paths: photoPaths,
-      transcode_audio: transcodeAudio,
-      force: force,
-    }),
-  });
-  const data = await res.json();
-  if (data.error) {
-    scanStatus.textContent = data.error;
-    convertBtn.disabled = false;
-    return;
-  }
-
-  progressSection.classList.remove("hidden");
-  pollJob(data.job_id);
-});
-
-const rowsByPath = {};
-
-function ensureProgressRows(items) {
-  progressBody.innerHTML = "";
-  for (const key in rowsByPath) delete rowsByPath[key];
-  items.forEach((item) => {
-    const tr = document.createElement("tr");
-    const nameTd = document.createElement("td");
-    nameTd.textContent = item.relative;
-    const typeTd = document.createElement("td");
-    typeTd.textContent = item.type === "avchd" ? "vídeo" : "foto";
-    const statusTd = document.createElement("td");
-    statusTd.textContent = item.status;
-    const progTd = document.createElement("td");
-    const bar = document.createElement("progress");
-    bar.max = 1;
-    bar.value = item.percent;
-    progTd.appendChild(bar);
-
-    tr.append(nameTd, typeTd, statusTd, progTd);
-    progressBody.appendChild(tr);
-    rowsByPath[item.path] = { statusTd, bar };
-  });
-}
-
-async function pollJob(jobId) {
-  const res = await fetch(`/api/status/${jobId}`);
-  const job = await res.json();
-  if (job.error) {
-    jobSummary.textContent = job.error;
-    convertBtn.disabled = false;
-    return;
-  }
-
-  if (Object.keys(rowsByPath).length === 0) {
-    ensureProgressRows(job.items);
-  }
-  job.items.forEach((item) => {
-    const row = rowsByPath[item.path];
-    if (!row) return;
-    row.statusTd.textContent = item.status + (item.error ? `: ${item.error}` : "");
-    row.bar.value = item.percent;
-  });
-
-  if (job.state === "finalizado") {
-    const done = job.items.filter((i) => i.status === "completado").length;
-    const skipped = job.items.filter((i) => i.status.startsWith("omitido")).length;
-    const errors = job.items.filter((i) => i.status === "error").length;
-    jobSummary.textContent = `Terminado: ${done} convertidos, ${skipped} omitidos, ${errors} con error.`;
-    convertBtn.disabled = false;
-    return;
-  }
-
-  setTimeout(() => pollJob(jobId), 800);
 }
 
 const stabCustomPanel = document.getElementById("stab-custom-panel");
@@ -409,19 +253,19 @@ function ensureStabilizeProgressRows(items) {
   });
 }
 
-function updateAvchdRowStats(path, outputName, stats) {
+function updateAvchdRowStats(path, stats) {
   const cb = avchdBody.querySelector(`.select-stabilize[data-path="${CSS.escape(path)}"]`);
   if (!cb) return;
   const row = cb.closest("tr");
-  const statsCell = row.querySelector("td[data-stats-cell]");
-  if (!statsCell) return;
-  statsCell.innerHTML = "";
+  const statusTd = row.querySelector("td[data-stats-cell]");
+  if (!statusTd) return;
+  statusTd.innerHTML = "";
   const span = document.createElement("span");
   span.className = "tag done";
   span.textContent = "ya estabilizado";
-  statsCell.appendChild(span);
-  statsCell.appendChild(document.createElement("br"));
-  statsCell.appendChild(document.createTextNode(formatStats(stats)));
+  statusTd.appendChild(span);
+  statusTd.appendChild(document.createElement("br"));
+  statusTd.appendChild(document.createTextNode(formatStats(stats)));
 }
 
 async function pollStabilizeJob(jobId) {
@@ -443,7 +287,7 @@ async function pollStabilizeJob(jobId) {
     row.bar.value = item.percent;
     if (item.stats) {
       row.statsTd.textContent = formatStats(item.stats);
-      updateAvchdRowStats(item.path, item.output_name, item.stats);
+      updateAvchdRowStats(item.path, item.stats);
     }
   });
 

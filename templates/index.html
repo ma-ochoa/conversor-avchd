@@ -1,23 +1,12 @@
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Conversor AVCHD</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-</head>
-<body>
-<header>
-  <div class="header-row">
-    <div>
-      <h1>Conversor AVCHD → MP4</h1>
-      <p class="subtitle">Remuxeo sin pérdida (sin recompresión de vídeo) y renombrado por fecha de captura.</p>
-    </div>
-    <a class="back-link" href="/montaje">🎬 Montaje →</a>
-  </div>
-</header>
+{% extends "_base.html" %}
+{% block title %}Conversión — Conversor de vídeo{% endblock %}
 
-<main>
+{% block page_header %}
+<h1>📼 Conversión</h1>
+<p class="subtitle">Remuxeo sin pérdida (sin recompresión de vídeo) y renombrado por fecha de captura.</p>
+{% endblock %}
+
+{% block content %}
   <section id="browser-section">
     <h2>1. Selecciona la carpeta de origen</h2>
     <div class="path-row">
@@ -40,7 +29,6 @@
       <table id="avchd-table">
         <thead><tr>
           <th>Convertir</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th>
-          <th>Estabilizar</th><th>Estabilización</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -57,7 +45,9 @@
     </div>
 
     <div class="block" id="other-block">
-      <h3>Otros formatos (.avi, .mkv, .wmv, .3gp) — todavía no soportados (<span id="other-count">0</span>)</h3>
+      <h3>Otros formatos (.avi, .mkv, .wmv, .3gp) (<span id="other-count">0</span>)</h3>
+      <p class="muted">Estos no admiten remuxeo sin pérdida — pásate a <a href="/recompresion">🗜️ Recompresión</a>
+      para convertirlos.</p>
       <ul id="other-list"></ul>
     </div>
 
@@ -67,53 +57,6 @@
     </div>
 
     <button id="convert-btn" class="primary">3. Convertir seleccionados</button>
-
-    <div class="options stabilize-options">
-      <p class="muted">Estabilización (opcional, independiente de la conversión): corrige el temblor de la
-      cámara con vid.stab. A diferencia del remuxeo, esto sí recodifica el vídeo y recorta ligeramente
-      los bordes — usa la columna "Estabilizar" de la tabla para marcar qué clips quieres procesar.</p>
-      <label><input type="checkbox" id="force-stabilize"> Forzar reestabilización de clips ya estabilizados</label>
-      <label><input type="checkbox" id="fast-hw"> Modo rápido (codificación por hardware, VideoToolbox)</label>
-      <p class="muted hint">Solo acelera de verdad en Apple Silicon con motor de vídeo dedicado (chips M-series
-      recientes, idealmente M5 o superior) — en otros procesadores puede no estar disponible o no aportar nada.
-      Medido con un clip de prueba: la codificación va ~2 veces más rápida y usa mucha menos CPU, pero el
-      análisis del temblor (la parte que más tarda) no se acelera, así que el ahorro del proceso completo es
-      modesto (~15%, no 2×). La calidad baja ligeramente (VMAF ≈96/100 comparado con el modo normal al mismo
-      tamaño de archivo) — para la mejor calidad posible deja esta casilla desmarcada.</p>
-
-      <div class="stab-mode-row">
-        <label><input type="radio" name="stab-mode" id="stab-mode-auto" value="auto" checked> Automático (recomendado)</label>
-        <label><input type="radio" name="stab-mode" id="stab-mode-custom" value="custom"> Personalizado</label>
-      </div>
-
-      <div id="stab-custom-panel" class="stab-custom-panel hidden">
-        <label>Sensibilidad al temblor: <span id="shakiness-value">5</span>/10
-          <input type="range" id="shakiness" min="1" max="10" step="1" value="5">
-        </label>
-        <p class="muted hint">Cuánto asume la detección que tiembla la cámara al buscar el movimiento. Más alto
-        busca temblor más fuerte/rápido, pero es más lento de analizar.</p>
-
-        <label>Suavizado: <span id="smoothing-value">10</span>
-          <input type="range" id="smoothing" min="0" max="50" step="1" value="10">
-        </label>
-        <p class="muted hint">Cuántos fotogramas alrededor se usan para suavizar el movimiento de cámara. Más alto
-        da un resultado más "flotante"/cinematográfico, pero necesita más zoom para compensar.</p>
-
-        <label>Zoom / recorte
-          <select id="zoom-mode">
-            <option value="auto_static">Automático — recorte fijo mínimo para todo el vídeo (el habitual)</option>
-            <option value="auto_dynamic">Automático dinámico — el recorte varía según haga falta en cada momento</option>
-            <option value="manual">Manual — tú eliges el porcentaje de zoom, como en Pinnacle</option>
-          </select>
-        </label>
-        <label id="zoom-percent-row" class="hidden">Zoom manual: <span id="zoom-percent-value">10</span>%
-          <input type="range" id="zoom-percent" min="0" max="50" step="1" value="10">
-        </label>
-        <p class="muted hint">Al reprocesar el mismo clip cambiando solo estos parámetros no hace falta repetir
-        el análisis (que es la parte lenta) — solo cambiar shakiness o forzar un nuevo análisis lo repite.</p>
-      </div>
-    </div>
-    <button id="stabilize-btn">4. Estabilizar marcados</button>
   </section>
 
   <section id="progress-section" class="hidden">
@@ -124,17 +67,8 @@
     </table>
     <p id="job-summary" class="muted"></p>
   </section>
+{% endblock %}
 
-  <section id="stabilize-progress-section" class="hidden">
-    <h2>Progreso de estabilización</h2>
-    <table id="stabilize-progress-table">
-      <thead><tr><th>Origen</th><th>Estado</th><th>Progreso</th><th>Estadísticas</th></tr></thead>
-      <tbody></tbody>
-    </table>
-    <p id="stabilize-job-summary" class="muted"></p>
-  </section>
-</main>
-
-<script src="{{ url_for('static', filename='app.js') }}"></script>
-</body>
-</html>
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='conversion.js') }}"></script>
+{% endblock %}

@@ -1,31 +1,45 @@
-# Conversor AVCHD
+# Conversor de vídeo
 
-Interfaz web (Flask, en local) para convertir los clips de vídeo de una cámara/camcorder
-(AVCHD `.MTS`/`.M2TS`, y también `.mp4`/`.mov` — incluido 4K) a MP4 **sin recompresión de
-vídeo** (solo se cambia el contenedor), renombrar vídeos y fotos con su fecha y hora real
-de captura, estabilizar clips con temblor de cámara, y montar un vídeo final (recortes,
-títulos y transiciones) con un mini editor integrado. Pensado para que el resultado se
-reproduzca sin problemas al subirlo a un NAS (Synology Photos, Plex, Emby, etc.) y se vea
-bien tanto en el móvil como en la TV.
+Aplicación web (Flask, en local) para el flujo de trabajo completo de vídeo de cámara —
+AVCHD `.MTS`/`.M2TS` y `.mp4`/`.mov` (incluido 4K) — organizada como un editor con
+**cuatro módulos** en una barra lateral persistente, cada uno con su propia carpeta de
+proyecto (se recuerda al cambiar de sección):
+
+- **📼 Conversión** — remuxeo sin pérdida y renombrado por fecha de captura.
+- **🗜️ Recompresión** — para formatos que no admiten remuxeo, o para reducir el tamaño
+  de un clip ya convertido (compartir por WhatsApp/email, etc.).
+- **🩹 Estabilización** — corrige el temblor de cámara, con modo automático o
+  personalizado.
+- **🎬 Montaje** — mini editor: unir clips, recortar, títulos, transiciones,
+  estabilización integrada con vista previa, y exportación final.
+
+Pensado para que el resultado se reproduzca sin problemas al subirlo a un NAS (Synology
+Photos, Plex, Emby, etc.) y se vea bien tanto en el móvil como en la TV.
 
 ## Funciones
 
-- **Remuxeo sin pérdida**: copia el vídeo H.264 bit a bit, solo cambia el contenedor a
-  `.mp4` — vale tanto para AVCHD (`.MTS`/`.M2TS`) como para cámaras que ya graban en
-  `.mp4`/`.mov` (incluido 4K), cuyo audio (a menudo PCM sin comprimir) puede necesitar el
-  mismo recodificado opcional a AAC que el AC-3 de AVCHD. No hay recompresión ni pérdida
-  de calidad de vídeo en ningún caso.
+- **Remuxeo sin pérdida** (Conversión): copia el vídeo H.264 bit a bit, solo cambia el
+  contenedor a `.mp4` — vale tanto para AVCHD (`.MTS`/`.M2TS`) como para cámaras que ya
+  graban en `.mp4`/`.mov` (incluido 4K), cuyo audio (a menudo PCM sin comprimir) puede
+  necesitar el mismo recodificado opcional a AAC que el AC-3 de AVCHD. No hay
+  recompresión ni pérdida de calidad de vídeo en ningún caso.
+- **Recompresión**: recodifica de verdad (a diferencia del remuxeo) formatos que no
+  admiten copia sin pérdida (`.avi`, `.mkv`, `.wmv`, `.3gp`), o reduce el tamaño de
+  cualquier clip ya convertido/estabilizado con preset de calidad y tope de resolución.
 - **Renombrado por fecha de captura**: tanto vídeos como fotos se renombran a
   `AAAAMMDD_HHMMSS.ext` usando la fecha real leída de los metadatos (con `exiftool`),
   no la fecha de copia del archivo.
-- **Estabilización opcional** (independiente del remuxeo): corrige el temblor de cámara
-  con `vid.stab` (dos pasadas: detección + corrección). Esto sí recodifica el vídeo —
-  es inevitable para poder corregirlo — y recorta ligeramente los bordes.
-- **Montaje**: mini editor (submenú "🎬 Montaje") para unir clips ya convertidos,
-  recortarlos, añadir títulos (texto o imagen con transparencia) y transiciones
-  cruzadas, guardando el trabajo como proyecto para continuarlo más tarde.
+- **Estabilización** (independiente del remuxeo): corrige el temblor de cámara con
+  `vid.stab` (dos pasadas: detección + corrección), con modo automático o personalizado
+  (sensibilidad, suavizado, zoom fijo/dinámico/manual). Esto sí recodifica el vídeo —
+  es inevitable para poder corregirlo.
+- **Montaje**: mini editor para unir clips ya convertidos, recortarlos, añadir títulos
+  (texto o imagen con transparencia), transiciones cruzadas, y estabilización integrada
+  con vista previa instantánea en el navegador — guardando el trabajo como proyecto
+  para continuarlo más tarde.
 - **Explorador de carpetas nativo**: botón "Explorar…" que abre el selector de carpetas
-  de macOS (Finder), además de un navegador de carpetas dentro de la propia página.
+  de macOS (Finder), además de un navegador de carpetas dentro de la propia página. La
+  última carpeta usada se recuerda al cambiar de módulo.
 - No se modifican ni se borran los archivos originales en ningún momento.
 
 ## Requisitos
@@ -67,7 +81,7 @@ python3 app.py
 Y abre http://127.0.0.1:5050 (el servidor solo escucha en local, no es accesible desde
 otros equipos de la red).
 
-## Uso
+## Conversión
 
 ### 1. Elegir la carpeta de origen
 
@@ -85,8 +99,8 @@ Pulsa **Escanear esta carpeta**. La app busca de forma recursiva:
   captura y el nombre que tendrán al convertir.
 - **Fotos** (`.jpg`, `.jpeg`, `.png`, `.heic`, `.heif`, `.tif`, `.tiff`) — mismo criterio
   de fecha/renombrado, sin conversión (se copian tal cual).
-- **Otros formatos** (`.avi`, `.mkv`, `.wmv`, `.3gp`) — se listan pero de momento no se
-  procesan (ver [Pendiente](#pendiente-fase-2)).
+- **Otros formatos** (`.avi`, `.mkv`, `.wmv`, `.3gp`) — no admiten remuxeo sin pérdida;
+  se listan aquí de forma informativa, pero se procesan desde **🗜️ Recompresión**.
 
 ### 3. Convertir
 
@@ -101,12 +115,28 @@ Las conversiones ya hechas se recuerdan (`conversion/.manifest.json`): puedes re
 la misma carpeta tras grabar más clips sin reconvertir lo ya hecho, salvo que actives
 **"Forzar reconversión"**.
 
-### 4. Estabilizar (opcional)
+## Recompresión
 
-En la tabla de vídeos hay una columna **"Estabilizar"** aparte de la de convertir —
-marca ahí los clips con temblor de cámara y pulsa **Estabilizar marcados**. El resultado
-se guarda en una carpeta `estabilizado/` (independiente de `conversion/`), y muestra
-estadísticas de cuánto ha tenido que corregir:
+Para dos casos que el remuxeo sin pérdida no puede resolver:
+
+- **Formatos no soportados**: cualquier `.avi`/`.mkv`/`.wmv`/`.3gp` detectado al escanear
+  la carpeta aparece aquí para recodificarlo de verdad a MP4/H.264/AAC.
+- **Reducir tamaño**: elige cualquier clip ya convertido o estabilizado (se listan con
+  su origen) para generar una copia más ligera — pensado para compartir por WhatsApp,
+  email, etc. La copia original nunca se toca.
+
+Controles: **Calidad** (alta/media/baja, controla el CRF de `libx264`) y **Resolución
+máxima** (original/1080p/720p/480p — nunca amplía un vídeo más pequeño que el tope
+elegido). El resultado se guarda en `recompresion/` dentro de la carpeta de origen, con
+el mismo renombrado por fecha que el resto de la app, y muestra cuánto se ha reducido
+el tamaño (p. ej. "72.4 MB → 3.8 MB (-94.8%)").
+
+## Estabilización
+
+En la tabla de vídeos hay una columna **"Estabilizar"** — marca los clips con temblor
+de cámara y pulsa **Estabilizar marcados**. El resultado se guarda en una carpeta
+`estabilizado/` (independiente de `conversion/`), y muestra estadísticas de cuánto ha
+tenido que corregir:
 
 > **Aviso sobre 4K**: la estabilización analiza y corrige a la resolución original del
 > vídeo — es lo que garantiza que la corrección sea correcta (reducir la resolución solo
@@ -153,10 +183,10 @@ archivo). Para la mejor calidad posible, déjala desmarcada.
 
 ## Montaje (mini editor)
 
-Desde el enlace **🎬 Montaje** (arriba a la derecha) se abre un editor sencillo, estilo
-Pinnacle Studio pero muy básico, que trabaja **sobre los clips ya convertidos o
-estabilizados** (los `.mp4` de `conversion/`/`estabilizado/`; los `.MTS` originales no
-se pueden previsualizar en el navegador).
+El módulo **🎬 Montaje** de la barra lateral abre un editor sencillo, estilo Pinnacle
+Studio pero muy básico, que trabaja **sobre los clips ya convertidos o estabilizados**
+(los `.mp4` de `conversion/`/`estabilizado/`; los `.MTS` originales no se pueden
+previsualizar en el navegador).
 
 ### 1. Carpeta del proyecto
 
@@ -255,11 +285,12 @@ diferencia del remuxeo, no es sin pérdida.
   con `<canvas>` sobre una copia ligera del clip (`.proxies/`), sin ninguna llamada al
   servidor al mover los sliders de suavizado/zoom.
 
-## Pendiente (fase 2)
+## Pendiente
 
-Se convierten y estabilizan vídeos AVCHD (`.MTS`/`.M2TS`) y de la familia MP4/MOV
-(`.mp4`, `.mov`, `.m4v`, incluido 4K). La pantalla ya lista, bajo "Otros formatos",
-cualquier vídeo en un contenedor distinto (`.avi`, `.mkv`, `.wmv`, `.3gp`) que encuentre
-en la carpeta, para una futura fase en la que también se recompriman/normalicen esos
-formatos — no se han probado todavía y podrían tener códecs que ffmpeg no maneje igual
-de bien.
+- Los formatos `.avi`/`.mkv`/`.wmv`/`.3gp` ya se recodifican desde **Recompresión**,
+  pero no se han probado todavía con material real — podrían tener códecs que ffmpeg no
+  maneje igual de bien que H.264/MP4.
+- No hay purga/expiración de las carpetas de caché que genera la app
+  (`.vidstab_cache/`, `.proxies/`, `.miniaturas/`) — crecen sin límite con el uso.
+- No hay suite de tests automatizados — todo se verifica manualmente contra clips
+  reales durante el desarrollo.

@@ -96,6 +96,7 @@ browseBtn.addEventListener("click", async () => {
 
 async function setRoot(newRoot) {
   root = newRoot;
+  rememberRoot(newRoot);
   projectSection.classList.remove("hidden");
   clipsSection.classList.remove("hidden");
   timelineSection.classList.remove("hidden");

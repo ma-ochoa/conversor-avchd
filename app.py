@@ -30,6 +30,7 @@ from converter.stabilize_jobs import get_job as get_stabilize_job, start_job as 
 from converter.thumbnails import get_or_create_thumbnail
 from converter.timeline_jobs import get_export_job, start_export
 from converter.analyze_jobs import get_analysis_job, start_analysis
+from converter.recompress_jobs import get_job as get_recompress_job, start_job as start_recompress_job
 
 app = Flask(__name__)
 
@@ -38,7 +39,7 @@ _MEDIA_EXTS = {".mp4", ".mov", ".jpg", ".jpeg", ".png", ".gif"}
 
 @app.route("/")
 def index():
-    return render_template("index.html", home=str(Path.home()))
+    return render_template("index.html", home=str(Path.home()), active="conversion")
 
 
 @app.route("/api/browse")
@@ -191,9 +192,14 @@ def stabilize_status(job_id):
     return jsonify(job)
 
 
+@app.route("/estabilizacion")
+def estabilizacion_page():
+    return render_template("estabilizacion.html", home=str(Path.home()), active="estabilizacion")
+
+
 @app.route("/montaje")
 def montaje_page():
-    return render_template("montaje.html", home=str(Path.home()))
+    return render_template("montaje.html", home=str(Path.home()), active="montaje")
 
 
 @app.route("/media")
@@ -336,6 +342,45 @@ def montaje_analyze():
 @app.route("/api/montaje/analyze-status/<job_id>")
 def montaje_analyze_status(job_id):
     job = get_analysis_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/recompresion")
+def recompresion_page():
+    return render_template("recompresion.html", home=str(Path.home()), active="recompresion")
+
+
+@app.route("/api/recompress", methods=["POST"])
+def recompress():
+    data = request.get_json(force=True)
+    root = data.get("root")
+    paths = data.get("paths", [])
+    quality = data.get("quality", "media")
+    max_width = data.get("max_width", "original")
+    force = bool(data.get("force", False))
+
+    if not root or not paths:
+        return jsonify({"error": "Nada que recomprimir"}), 400
+
+    try:
+        find_ffmpeg_with_vidstab()
+    except VidstabMissingError as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    if quality not in ("alta", "media", "baja"):
+        quality = "media"
+    if max_width not in ("original", "1080p", "720p", "480p"):
+        max_width = "original"
+
+    job_id = start_recompress_job(root, paths, quality, max_width, force)
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/recompress-status/<job_id>")
+def recompress_status(job_id):
+    job = get_recompress_job(job_id)
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)

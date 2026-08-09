@@ -1,0 +1,92 @@
+{% extends "_base.html" %}
+{% block title %}Estabilización — Conversor de vídeo{% endblock %}
+
+{% block page_header %}
+<h1>🩹 Estabilización</h1>
+<p class="subtitle">Corrige el temblor de cámara con vid.stab — independiente de la conversión.</p>
+{% endblock %}
+
+{% block content %}
+  <section id="browser-section">
+    <h2>1. Selecciona la carpeta de origen</h2>
+    <div class="path-row">
+      <input id="path-input" type="text" value="{{ home }}">
+      <button id="go-btn">Ir</button>
+      <button id="browse-btn" class="primary">📁 Explorar…</button>
+    </div>
+    <div id="crumb" class="crumb"></div>
+    <ul id="dir-list" class="dir-list"></ul>
+    <button id="scan-btn" class="primary">Escanear esta carpeta</button>
+    <span id="scan-status" class="status-text"></span>
+  </section>
+
+  <section id="results-section" class="hidden">
+    <h2>2. Vídeos disponibles</h2>
+    <p class="muted">Se estabiliza siempre a partir del fichero original (no hace falta convertirlo antes).</p>
+
+    <table id="avchd-table">
+      <thead><tr>
+        <th>Estabilizar</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Estado</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="avchd-empty" class="muted hidden">No se han encontrado vídeos (.MTS/.M2TS/.mp4/.mov) en esta carpeta.</p>
+
+    <div class="options stabilize-options">
+      <label><input type="checkbox" id="force-stabilize"> Forzar reestabilización de clips ya estabilizados</label>
+      <label><input type="checkbox" id="fast-hw"> Modo rápido (codificación por hardware, VideoToolbox)</label>
+      <p class="muted hint">Solo acelera de verdad en Apple Silicon con motor de vídeo dedicado (chips M-series
+      recientes, idealmente M5 o superior) — en otros procesadores puede no estar disponible o no aportar nada.
+      Medido con un clip de prueba: la codificación va ~2 veces más rápida y usa mucha menos CPU, pero el
+      análisis del temblor (la parte que más tarda) no se acelera, así que el ahorro del proceso completo es
+      modesto (~15%, no 2×). La calidad baja ligeramente (VMAF ≈96/100 comparado con el modo normal al mismo
+      tamaño de archivo) — para la mejor calidad posible deja esta casilla desmarcada.</p>
+
+      <div class="stab-mode-row">
+        <label><input type="radio" name="stab-mode" id="stab-mode-auto" value="auto" checked> Automático (recomendado)</label>
+        <label><input type="radio" name="stab-mode" id="stab-mode-custom" value="custom"> Personalizado</label>
+      </div>
+
+      <div id="stab-custom-panel" class="stab-custom-panel hidden">
+        <label>Sensibilidad al temblor: <span id="shakiness-value">5</span>/10
+          <input type="range" id="shakiness" min="1" max="10" step="1" value="5">
+        </label>
+        <p class="muted hint">Cuánto asume la detección que tiembla la cámara al buscar el movimiento. Más alto
+        busca temblor más fuerte/rápido, pero es más lento de analizar.</p>
+
+        <label>Suavizado: <span id="smoothing-value">10</span>
+          <input type="range" id="smoothing" min="0" max="50" step="1" value="10">
+        </label>
+        <p class="muted hint">Cuántos fotogramas alrededor se usan para suavizar el movimiento de cámara. Más alto
+        da un resultado más "flotante"/cinematográfico, pero necesita más zoom para compensar.</p>
+
+        <label>Zoom / recorte
+          <select id="zoom-mode">
+            <option value="auto_static">Automático — recorte fijo mínimo para todo el vídeo (el habitual)</option>
+            <option value="auto_dynamic">Automático dinámico — el recorte varía según haga falta en cada momento</option>
+            <option value="manual">Manual — tú eliges el porcentaje de zoom, como en Pinnacle</option>
+          </select>
+        </label>
+        <label id="zoom-percent-row" class="hidden">Zoom manual: <span id="zoom-percent-value">10</span>%
+          <input type="range" id="zoom-percent" min="0" max="50" step="1" value="10">
+        </label>
+        <p class="muted hint">Al reprocesar el mismo clip cambiando solo estos parámetros no hace falta repetir
+        el análisis (que es la parte lenta) — solo cambiar la sensibilidad al temblor lo repite.</p>
+      </div>
+    </div>
+    <button id="stabilize-btn" class="primary">3. Estabilizar marcados</button>
+  </section>
+
+  <section id="stabilize-progress-section" class="hidden">
+    <h2>Progreso</h2>
+    <table id="stabilize-progress-table">
+      <thead><tr><th>Origen</th><th>Estado</th><th>Progreso</th><th>Estadísticas</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="stabilize-job-summary" class="muted"></p>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='estabilizacion.js') }}"></script>
+{% endblock %}

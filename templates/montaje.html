@@ -1,24 +1,15 @@
-<!doctype html>
-<html lang="es">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Montaje</title>
-<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% extends "_base.html" %}
+{% block title %}Montaje — Conversor de vídeo{% endblock %}
+{% block extra_head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='montaje.css') }}">
-</head>
-<body>
-<header>
-  <div class="header-row">
-    <div>
-      <h1>🎬 Montaje</h1>
-      <p class="subtitle">Une clips, recorta, añade títulos y transiciones, y exporta un vídeo final.</p>
-    </div>
-    <a class="back-link" href="/">← Conversor</a>
-  </div>
-</header>
+{% endblock %}
 
-<main>
+{% block page_header %}
+<h1>🎬 Montaje</h1>
+<p class="subtitle">Une clips, recorta, añade títulos y transiciones, y exporta un vídeo final.</p>
+{% endblock %}
+
+{% block content %}
   <section id="root-section">
     <h2>1. Carpeta del proyecto</h2>
     <div class="path-row">
@@ -71,115 +62,115 @@
     </div>
     <p id="export-result" class="hidden"></p>
   </section>
-</main>
 
-<!-- Modal de previsualización / recorte -->
-<div id="preview-modal" class="modal hidden">
-  <div class="modal-content">
-    <button class="modal-close" id="preview-close">✕</button>
-    <video id="preview-video" controls></video>
-    <div id="trim-controls" class="trim-controls hidden">
-      <div>
-        <label>Inicio: <input id="trim-in" type="number" step="0.1" min="0"> s</label>
-        <button id="mark-in-btn">Marcar aquí</button>
+  <!-- Modal de previsualización / recorte -->
+  <div id="preview-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="preview-close">✕</button>
+      <video id="preview-video" controls></video>
+      <div id="trim-controls" class="trim-controls hidden">
+        <div>
+          <label>Inicio: <input id="trim-in" type="number" step="0.1" min="0"> s</label>
+          <button id="mark-in-btn">Marcar aquí</button>
+        </div>
+        <div>
+          <label>Fin: <input id="trim-out" type="number" step="0.1" min="0"> s</label>
+          <button id="mark-out-btn">Marcar aquí</button>
+        </div>
+        <button id="trim-apply-btn" class="primary">Aplicar recorte</button>
       </div>
-      <div>
-        <label>Fin: <input id="trim-out" type="number" step="0.1" min="0"> s</label>
-        <button id="mark-out-btn">Marcar aquí</button>
-      </div>
-      <button id="trim-apply-btn" class="primary">Aplicar recorte</button>
     </div>
   </div>
-</div>
 
-<!-- Modal de título -->
-<div id="title-modal" class="modal hidden">
-  <div class="modal-content">
-    <button class="modal-close" id="title-close">✕</button>
-    <h3>Título del clip</h3>
-    <label>Texto
-      <input id="title-text" type="text" placeholder="Escribe un título…">
-    </label>
-    <label>Fuente
-      <select id="title-font"></select>
-    </label>
-    <label>Duración del título
-      <input id="title-duration" type="number" min="0.5" max="15" step="0.5" value="3"> s
-    </label>
-    <hr>
-    <label>Imagen superpuesta (PNG con transparencia recomendado)</label>
-    <div class="path-row">
-      <input id="title-image" type="text" readonly placeholder="Ninguna imagen seleccionada">
-      <button id="title-image-pick">Elegir imagen…</button>
-      <button id="title-image-clear">Quitar</button>
-    </div>
-    <img id="title-image-preview" class="title-image-preview hidden">
-    <div class="modal-actions">
-      <button id="title-clear-btn">Quitar título</button>
-      <button id="title-save-btn" class="primary">Guardar título</button>
+  <!-- Modal de título -->
+  <div id="title-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="title-close">✕</button>
+      <h3>Título del clip</h3>
+      <label>Texto
+        <input id="title-text" type="text" placeholder="Escribe un título…">
+      </label>
+      <label>Fuente
+        <select id="title-font"></select>
+      </label>
+      <label>Duración del título
+        <input id="title-duration" type="number" min="0.5" max="15" step="0.5" value="3"> s
+      </label>
+      <hr>
+      <label>Imagen superpuesta (PNG con transparencia recomendado)</label>
+      <div class="path-row">
+        <input id="title-image" type="text" readonly placeholder="Ninguna imagen seleccionada">
+        <button id="title-image-pick">Elegir imagen…</button>
+        <button id="title-image-clear">Quitar</button>
+      </div>
+      <img id="title-image-preview" class="title-image-preview hidden">
+      <div class="modal-actions">
+        <button id="title-clear-btn">Quitar título</button>
+        <button id="title-save-btn" class="primary">Guardar título</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- Modal de estabilización -->
-<div id="stabilize-modal" class="modal hidden">
-  <div class="modal-content stabilize-modal-content">
-    <button class="modal-close" id="stabilize-close">✕</button>
-    <h3>Estabilización del clip</h3>
-    <p class="muted">El análisis completo (una vez por clip) tarda; en 4K bastante más que en 1080p.
-    Después puedes ajustar suavizado y zoom y ver el resultado aproximado al instante, sin volver a
-    analizar ni generar ningún vídeo.</p>
+  <!-- Modal de estabilización -->
+  <div id="stabilize-modal" class="modal hidden">
+    <div class="modal-content stabilize-modal-content">
+      <button class="modal-close" id="stabilize-close">✕</button>
+      <h3>Estabilización del clip</h3>
+      <p class="muted">El análisis completo (una vez por clip) tarda; en 4K bastante más que en 1080p.
+      Después puedes ajustar suavizado y zoom y ver el resultado aproximado al instante, sin volver a
+      analizar ni generar ningún vídeo.</p>
 
-    <div id="stabilize-analyze-row">
-      <button id="stabilize-analyze-btn" class="primary">🔍 Analizar clip</button>
-      <span id="stabilize-analyze-status" class="status-text"></span>
-      <progress id="stabilize-analyze-progress" max="1" value="0" class="hidden"></progress>
-    </div>
-
-    <div id="stabilize-preview-wrap" class="hidden">
-      <div class="canvas-wrap">
-        <video id="stabilize-proxy-video" muted playsinline class="offscreen-video"></video>
-        <canvas id="stabilize-canvas" width="480" height="270"></canvas>
-      </div>
-      <div class="canvas-controls">
-        <button id="stabilize-play-btn">▶️</button>
-        <input id="stabilize-seek" type="range" min="0" max="1" step="0.001" value="0">
-        <label class="canvas-toggle"><input type="checkbox" id="stabilize-preview-toggle" checked> con corrección</label>
+      <div id="stabilize-analyze-row">
+        <button id="stabilize-analyze-btn" class="primary">🔍 Analizar clip</button>
+        <span id="stabilize-analyze-status" class="status-text"></span>
+        <progress id="stabilize-analyze-progress" max="1" value="0" class="hidden"></progress>
       </div>
 
-      <div class="stab-mode-row">
-        <label><input type="radio" name="montaje-stab-mode" id="montaje-stab-mode-auto" value="auto" checked> Automático</label>
-        <label><input type="radio" name="montaje-stab-mode" id="montaje-stab-mode-custom" value="custom"> Personalizado</label>
+      <div id="stabilize-preview-wrap" class="hidden">
+        <div class="canvas-wrap">
+          <video id="stabilize-proxy-video" muted playsinline class="offscreen-video"></video>
+          <canvas id="stabilize-canvas" width="480" height="270"></canvas>
+        </div>
+        <div class="canvas-controls">
+          <button id="stabilize-play-btn">▶️</button>
+          <input id="stabilize-seek" type="range" min="0" max="1" step="0.001" value="0">
+          <label class="canvas-toggle"><input type="checkbox" id="stabilize-preview-toggle" checked> con corrección</label>
+        </div>
+
+        <div class="stab-mode-row">
+          <label><input type="radio" name="montaje-stab-mode" id="montaje-stab-mode-auto" value="auto" checked> Automático</label>
+          <label><input type="radio" name="montaje-stab-mode" id="montaje-stab-mode-custom" value="custom"> Personalizado</label>
+        </div>
+
+        <div id="montaje-stab-custom-panel" class="stab-custom-panel hidden">
+          <label>Sensibilidad al temblor: <span id="montaje-shakiness-value">5</span>/10
+            <input type="range" id="montaje-shakiness" min="1" max="10" step="1" value="5">
+          </label>
+          <p class="muted hint">Cambiar esto sí requiere volver a analizar.</p>
+          <label>Suavizado: <span id="montaje-smoothing-value">10</span>
+            <input type="range" id="montaje-smoothing" min="0" max="50" step="1" value="10">
+          </label>
+          <label>Zoom / recorte
+            <select id="montaje-zoom-mode">
+              <option value="auto_static">Automático — recorte fijo mínimo</option>
+              <option value="auto_dynamic">Automático dinámico</option>
+              <option value="manual">Manual — porcentaje fijo</option>
+            </select>
+          </label>
+          <label id="montaje-zoom-percent-row" class="hidden">Zoom manual: <span id="montaje-zoom-percent-value">10</span>%
+            <input type="range" id="montaje-zoom-percent" min="0" max="50" step="1" value="10">
+          </label>
+        </div>
       </div>
 
-      <div id="montaje-stab-custom-panel" class="stab-custom-panel hidden">
-        <label>Sensibilidad al temblor: <span id="montaje-shakiness-value">5</span>/10
-          <input type="range" id="montaje-shakiness" min="1" max="10" step="1" value="5">
-        </label>
-        <p class="muted hint">Cambiar esto sí requiere volver a analizar.</p>
-        <label>Suavizado: <span id="montaje-smoothing-value">10</span>
-          <input type="range" id="montaje-smoothing" min="0" max="50" step="1" value="10">
-        </label>
-        <label>Zoom / recorte
-          <select id="montaje-zoom-mode">
-            <option value="auto_static">Automático — recorte fijo mínimo</option>
-            <option value="auto_dynamic">Automático dinámico</option>
-            <option value="manual">Manual — porcentaje fijo</option>
-          </select>
-        </label>
-        <label id="montaje-zoom-percent-row" class="hidden">Zoom manual: <span id="montaje-zoom-percent-value">10</span>%
-          <input type="range" id="montaje-zoom-percent" min="0" max="50" step="1" value="10">
-        </label>
+      <div class="modal-actions">
+        <button id="stabilize-clear-btn">Quitar estabilización</button>
+        <button id="stabilize-save-btn" class="primary" disabled>Guardar</button>
       </div>
-    </div>
-
-    <div class="modal-actions">
-      <button id="stabilize-clear-btn">Quitar estabilización</button>
-      <button id="stabilize-save-btn" class="primary" disabled>Guardar</button>
     </div>
   </div>
-</div>
+{% endblock %}
 
+{% block extra_scripts %}
 <script src="{{ url_for('static', filename='montaje.js') }}"></script>
-</body>
-</html>
+{% endblock %}

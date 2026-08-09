@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Conversor de vídeo{% endblock %}</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block extra_head %}{% endblock %}
+</head>
+<body>
+<div class="app-shell">
+  <nav class="sidebar">
+    <div class="sidebar-brand">🎞️ Conversor de vídeo</div>
+    <a class="sidebar-link {{ 'active' if active == 'conversion' else '' }}" href="/">
+      <span class="sidebar-icon">📼</span> Conversión
+    </a>
+    <a class="sidebar-link {{ 'active' if active == 'recompresion' else '' }}" href="/recompresion">
+      <span class="sidebar-icon">🗜️</span> Recompresión
+    </a>
+    <a class="sidebar-link {{ 'active' if active == 'estabilizacion' else '' }}" href="/estabilizacion">
+      <span class="sidebar-icon">🩹</span> Estabilización
+    </a>
+    <a class="sidebar-link {{ 'active' if active == 'montaje' else '' }}" href="/montaje">
+      <span class="sidebar-icon">🎬</span> Montaje
+    </a>
+    <div class="sidebar-footer muted">Carpeta de proyecto compartida entre secciones.</div>
+  </nav>
+
+  <div class="app-main">
+    <header class="page-header">
+      {% block page_header %}{% endblock %}
+    </header>
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='shell.js') }}"></script>
+{% block extra_scripts %}{% endblock %}
+</body>
+</html>

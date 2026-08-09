@@ -1,0 +1,81 @@
+{% extends "_base.html" %}
+{% block title %}Recompresión — Conversor de vídeo{% endblock %}
+
+{% block page_header %}
+<h1>🗜️ Recompresión</h1>
+<p class="subtitle">Convierte formatos que no admiten remuxeo sin pérdida, o reduce el tamaño de un vídeo ya convertido para compartirlo.</p>
+{% endblock %}
+
+{% block content %}
+  <section id="browser-section">
+    <h2>1. Selecciona la carpeta de origen</h2>
+    <div class="path-row">
+      <input id="path-input" type="text" value="{{ home }}">
+      <button id="go-btn">Ir</button>
+      <button id="browse-btn" class="primary">📁 Explorar…</button>
+    </div>
+    <div id="crumb" class="crumb"></div>
+    <ul id="dir-list" class="dir-list"></ul>
+    <button id="scan-btn" class="primary">Escanear esta carpeta</button>
+    <span id="scan-status" class="status-text"></span>
+  </section>
+
+  <section id="results-section" class="hidden">
+    <h2>2. Elige qué recomprimir</h2>
+
+    <div class="block">
+      <h3>Formatos no soportados (<span id="other-count">0</span>)</h3>
+      <p class="muted">No admiten remuxeo sin pérdida — aquí sí se recodifican de verdad.</p>
+      <table id="other-table">
+        <thead><tr><th></th><th>Origen</th><th>Formato</th><th>Tamaño</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="other-empty" class="muted hidden">No se han encontrado .avi/.mkv/.wmv/.3gp en esta carpeta.</p>
+    </div>
+
+    <div class="block">
+      <h3>Clips ya convertidos (<span id="clips-count">0</span>)</h3>
+      <p class="muted">Para reducir tamaño y compartir (WhatsApp, email…) — se recodifica una copia nueva,
+      la original no se toca.</p>
+      <table id="clips-table">
+        <thead><tr><th></th><th>Origen</th><th>Tamaño</th><th>Duración</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="clips-empty" class="muted hidden">No hay clips convertidos o estabilizados en esta carpeta todavía.</p>
+    </div>
+
+    <div class="options">
+      <label>Calidad
+        <select id="quality-select">
+          <option value="alta">Alta (menos compresión, más peso)</option>
+          <option value="media" selected>Media (equilibrada)</option>
+          <option value="baja">Baja (más compresión, menos peso)</option>
+        </select>
+      </label>
+      <label>Resolución máxima
+        <select id="resolution-select">
+          <option value="original" selected>Original (sin reducir)</option>
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="480p">480p</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="force"> Forzar recompresión de lo ya recomprimido</label>
+    </div>
+
+    <button id="recompress-btn" class="primary">3. Recomprimir seleccionados</button>
+  </section>
+
+  <section id="progress-section" class="hidden">
+    <h2>Progreso</h2>
+    <table id="progress-table">
+      <thead><tr><th>Origen</th><th>Estado</th><th>Progreso</th><th>Resultado</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="job-summary" class="muted"></p>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='recompresion.js') }}"></script>
+{% endblock %}
