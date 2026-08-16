@@ -8,6 +8,12 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
+from converter.avanzada import DepsMissingError, check_deps
+from converter.avanzada_jobs import (
+    PROCESOS,
+    get_job as get_avanzada_job,
+    start_job as start_avanzada_job,
+)
 from converter.config import get_working_dir, set_working_dir
 from converter.ffmpeg_ops import ToolsMissingError, check_tools
 from converter.fonts import list_system_fonts
@@ -425,6 +431,42 @@ def montaje_analyze():
 @app.route("/api/montaje/analyze-status/<job_id>")
 def montaje_analyze_status(job_id):
     job = get_analysis_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/avanzada")
+def avanzada_page():
+    return render_template("avanzada.html", home=str(Path.home()), active="avanzada")
+
+
+@app.route("/api/avanzada", methods=["POST"])
+def avanzada():
+    data = request.get_json(force=True)
+    root = data.get("root")
+    proceso = data.get("proceso")
+    paths = data.get("paths", [])
+    params = data.get("params") or {}
+
+    if not root or not paths:
+        return jsonify({"error": "No hay nada seleccionado"}), 400
+    if proceso not in PROCESOS:
+        return jsonify({"error": f"Proceso desconocido: {proceso}"}), 400
+
+    try:
+        check_tools()
+        check_deps()
+    except (ToolsMissingError, DepsMissingError) as exc:
+        return jsonify({"error": str(exc)}), 500
+
+    job_id = start_avanzada_job(root, proceso, paths, params)
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/avanzada-status/<job_id>")
+def avanzada_status(job_id):
+    job = get_avanzada_job(job_id)
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)

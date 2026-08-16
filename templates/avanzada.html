@@ -1,0 +1,212 @@
+{% extends "_base.html" %}
+{% block title %}Estabilización avanzada — Conversor de vídeo{% endblock %}
+
+{% block page_header %}
+<h1>🎯 Estabilización avanzada</h1>
+<p class="subtitle">Procesos que la estabilización normal no cubre: bloquear el encuadre como con trípode,
+centrar un objeto, extraer fotogramas descartando los malos y verificar el resultado.</p>
+{% endblock %}
+
+{% block content %}
+  <section id="browser-section">
+    <h2>1. Selecciona la carpeta de origen</h2>
+    <div class="path-row">
+      <input id="path-input" type="text" value="{{ home }}">
+      <button id="go-btn">Ir</button>
+      <button id="browse-btn" class="primary">📁 Explorar…</button>
+    </div>
+    <div id="crumb" class="crumb"></div>
+    <ul id="dir-list" class="dir-list"></ul>
+    <button id="scan-btn" class="primary">Escanear esta carpeta</button>
+    <span id="scan-status" class="status-text"></span>
+  </section>
+
+  <section id="results-section" class="hidden">
+    <h2>2. Elige los vídeos</h2>
+    <p class="muted">Se trabaja siempre sobre el fichero original. Todo lo generado va a
+      <code>avanzada/</code> dentro de tu carpeta de trabajo — el original no se toca.</p>
+
+    <table id="video-table">
+      <thead><tr>
+        <th><input type="checkbox" id="check-all"></th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th>
+      </tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="video-empty" class="muted hidden">No se han encontrado vídeos (.MTS/.M2TS/.mp4/.mov) en esta carpeta.</p>
+
+    <h2>3. Elige el proceso</h2>
+    <div class="stab-mode-row proceso-row">
+      <label><input type="radio" name="proceso" value="bloqueo" checked> 🔒 Bloqueo de encuadre</label>
+      <label><input type="radio" name="proceso" value="seguimiento"> 🎯 Seguir objeto</label>
+      <label><input type="radio" name="proceso" value="extraccion"> 🎞️ Extraer fotogramas</label>
+      <label><input type="radio" name="proceso" value="hoja"> 🗂️ Hoja de contacto</label>
+      <label><input type="radio" name="proceso" value="auditoria"> 🔬 Auditar resultado</label>
+    </div>
+
+    <!-- ── Bloqueo de encuadre ─────────────────────────────────────────── -->
+    <div class="stab-custom-panel proceso-panel" data-proceso="bloqueo">
+      <p class="muted">Deja el paisaje clavado corrigiendo el recorrido entero de la cámara. A diferencia de
+      vid.stab, que suaviza el movimiento, esto lo elimina: el encuadre queda fijo como si hubiera trípode.
+      Mueve el origen del recorte en vez de remuestrear, así que ningún píxel se interpola.</p>
+
+      <label>Modo
+        <select id="bloq-modo">
+          <option value="bloqueo" selected>Bloqueo total — encuadre fijo (cuesta más recorte)</option>
+          <option value="suavizado">Suavizado — respeta el movimiento lento intencionado</option>
+        </select>
+      </label>
+      <label id="bloq-suav-row" class="hidden">Ventana de suavizado: <span id="bloq-suav-value">1.0</span> s
+        <input type="range" id="bloq-suavizado" min="0.4" max="4" step="0.2" value="1">
+      </label>
+      <p class="muted hint">Solo en modo suavizado. Cuanto mayor la ventana, más quieta queda la imagen y más
+      recorte cuesta.</p>
+
+      <label>Separación entre anclas: <span id="bloq-anclas-value">5</span> s
+        <input type="range" id="bloq-anclas" min="2" max="15" step="1" value="5">
+      </label>
+      <p class="muted hint">El recorrido se mide por anclas encadenadas en vez de sumando fotograma a fotograma:
+      sumar acumula el error de cada medida y a mitad del clip la imagen vuelve a moverse. Con anclas, cada
+      fotograma se compara con una referencia cercana y solo se encadenan unas pocas. Bájalo si la escena cambia
+      deprisa (un atardecer); súbelo si es estable.</p>
+
+      <label>Descartar medidas por debajo de: <span id="bloq-calidad-value">30</span>
+        <input type="range" id="bloq-calidad" min="5" max="80" step="5" value="30">
+      </label>
+      <p class="muted hint">Cuando la escena se queda sin detalle la medida falla y produce saltos imposibles.
+      Esas se descartan y se rellenan interpolando desde las buenas.</p>
+
+      <label>Margen de recorte extra: <span id="bloq-margen-value">0</span>%
+        <input type="range" id="bloq-margen" min="0" max="30" step="5" value="0">
+      </label>
+    </div>
+
+    <!-- ── Seguir objeto ───────────────────────────────────────────────── -->
+    <div class="stab-custom-panel proceso-panel hidden" data-proceso="seguimiento">
+      <p class="muted">Recorta un cuadrado centrado en un objeto circular, fotograma a fotograma. Pensado para
+      Sol, Luna o planetas: ajusta una circunferencia de radio conocido al borde del disco, así que funciona
+      aunque solo se vea un arco (disco tapado a medias o cortado por el encuadre).</p>
+
+      <label>Radio del objeto
+        <select id="seg-radio-modo">
+          <option value="optica" selected>Calcular desde la óptica (recomendado)</option>
+          <option value="manual">Indicarlo en píxeles</option>
+        </select>
+      </label>
+
+      <div id="seg-optica-panel">
+        <label>Objeto
+          <select id="seg-objeto">
+            <option value="sol" selected>Sol</option>
+            <option value="luna">Luna</option>
+          </select>
+        </label>
+        <label>Focal: <span id="seg-focal-value">240</span> mm
+          <input type="range" id="seg-focal" min="50" max="1200" step="10" value="240">
+        </label>
+        <label>Sensor
+          <select id="seg-sensor">
+            <option value="23.5" selected>APS-C (23,5 mm)</option>
+            <option value="36.0">Full frame (36 mm)</option>
+            <option value="17.3">Micro 4/3 (17,3 mm)</option>
+            <option value="13.2">1 pulgada (13,2 mm)</option>
+          </select>
+        </label>
+        <p class="muted hint">De la focal y el ancho del sensor sale el tamaño del disco en píxeles, sin tener
+        que medirlo a mano. Ojo si grabas en un modo recortado: entonces el ancho efectivo del sensor es menor.</p>
+      </div>
+
+      <label id="seg-radio-row" class="hidden">Radio en píxeles
+        <input type="number" id="seg-radio-px" min="10" max="2000" step="1" value="180">
+      </label>
+
+      <label>Lado del recorte
+        <select id="seg-lado-modo">
+          <option value="auto" selected>Automático — el objeto ocupa el 28% del cuadro</option>
+          <option value="manual">Manual</option>
+        </select>
+      </label>
+      <label id="seg-lado-row" class="hidden">Lado en píxeles
+        <input type="number" id="seg-lado" min="64" max="4096" step="2" value="1280">
+      </label>
+    </div>
+
+    <!-- ── Extraer fotogramas ──────────────────────────────────────────── -->
+    <div class="stab-custom-panel proceso-panel hidden" data-proceso="extraccion">
+      <p class="muted">Reduce N:1 quedándose con el <strong>mejor</strong> fotograma de cada grupo, no con uno
+      fijo. Con 3:1 hay tres candidatos por hueco, así que en los momentos malos casi siempre queda alguno
+      aprovechable.</p>
+
+      <label>Reducción
+        <select id="ext-ratio">
+          <option value="1" selected>1:1 — todos los fotogramas (solo filtrar)</option>
+          <option value="2">2:1 — la mitad</option>
+          <option value="3">3:1 — un tercio</option>
+          <option value="4">4:1</option>
+          <option value="5">5:1</option>
+          <option value="10">10:1</option>
+        </select>
+      </label>
+
+      <label><input type="checkbox" id="ext-negros" checked> Descartar caídas a negro del vídeo</label>
+      <label><input type="checkbox" id="ext-movidos" checked> Descartar fotogramas movidos</label>
+      <p class="muted hint">La nitidez se juzga comparando cada fotograma con la <strong>mediana de su
+      entorno</strong>, no con un umbral fijo: en material que cambia de contraste un umbral fijo da falsos
+      positivos constantes.</p>
+
+      <label>Salida
+        <select id="ext-salida">
+          <option value="png" selected>Secuencia PNG (sin pérdida)</option>
+          <option value="prores">Vídeo ProRes 422 HQ</option>
+          <option value="h264">Vídeo H.264</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- ── Hoja de contacto ────────────────────────────────────────────── -->
+    <div class="stab-custom-panel proceso-panel hidden" data-proceso="hoja">
+      <p class="muted">Miniaturas en cuadrícula con retícula central, para revisar cientos de fotogramas de un
+      vistazo y ver si algo baila o se ha colado un fotograma malo.</p>
+      <label>Columnas: <span id="hoja-col-value">10</span>
+        <input type="range" id="hoja-columnas" min="4" max="20" step="1" value="10">
+      </label>
+      <label>Tamaño de celda: <span id="hoja-celda-value">240</span> px
+        <input type="range" id="hoja-celda" min="120" max="400" step="20" value="240">
+      </label>
+      <label><input type="checkbox" id="hoja-reticula" checked> Dibujar retícula central</label>
+    </div>
+
+    <!-- ── Auditar ─────────────────────────────────────────────────────── -->
+    <div class="stab-custom-panel proceso-panel hidden" data-proceso="auditoria">
+      <p class="muted">Vuelve a medir <strong>sobre el resultado</strong>, no sobre los cálculos intermedios.
+      Es lo que descubre los fallos de verdad: deriva que reaparece a mitad del clip, fotogramas malos que se
+      colaron, descentrados que los datos intermedios daban por buenos.</p>
+      <label><input type="checkbox" id="aud-objeto"> Medir también el descentrado del objeto</label>
+      <p class="muted hint">Si lo marcas, usa los mismos parámetros de óptica que «Seguir objeto».</p>
+    </div>
+
+    <div class="options">
+      <label><input type="checkbox" id="deinterlace"> Desentrelazar antes de procesar (AVCHD 1080i)</label>
+      <label>Formato de salida de vídeo
+        <select id="formato">
+          <option value="prores" selected>ProRes 422 HQ (para editar)</option>
+          <option value="h264">H.264 (para compartir)</option>
+        </select>
+      </label>
+    </div>
+
+    <button id="run-btn" class="primary">4. Procesar seleccionados</button>
+  </section>
+
+  <section id="progress-section" class="hidden">
+    <h2>Progreso</h2>
+    <table id="progress-table">
+      <thead><tr><th>Origen</th><th>Estado</th><th>Progreso</th><th>Resultado</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="job-summary" class="muted"></p>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='avanzada.js') }}"></script>
+{% endblock %}
