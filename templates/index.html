@@ -28,7 +28,8 @@
       <h3>Vídeos (<span id="avchd-count">0</span>)</h3>
       <table id="avchd-table">
         <thead><tr>
-          <th>Convertir</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th>
+          <th><input type="checkbox" id="avchd-select-all" checked title="Marcar/desmarcar todos"> Convertir</th>
+          <th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th>
         </tr></thead>
         <tbody></tbody>
       </table>
@@ -38,7 +39,10 @@
     <div class="block">
       <h3>Fotos (<span id="photo-count">0</span>)</h3>
       <table id="photo-table">
-        <thead><tr><th></th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th></tr></thead>
+        <thead><tr>
+          <th><input type="checkbox" id="photo-select-all" checked title="Marcar/desmarcar todas"></th>
+          <th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Destino</th><th>Estado</th>
+        </tr></thead>
         <tbody></tbody>
       </table>
       <p id="photo-empty" class="muted hidden">No se han encontrado fotos en esta carpeta.</p>
@@ -52,6 +56,9 @@
     </div>
 
     <div class="options">
+      <label class="prefix-label">Prefijo del nombre (opcional)
+        <input type="text" id="prefix-input" placeholder="p. ej. a6400">
+      </label>
       <label><input type="checkbox" id="transcode-audio"> Recodificar audio a AAC si no es compatible (AC-3, PCM…) — recomendado si no se oye el sonido en el navegador o el móvil; el vídeo siempre se copia sin recompresión</label>
       <label><input type="checkbox" id="force"> Forzar reconversión de elementos ya convertidos</label>
     </div>

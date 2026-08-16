@@ -12,6 +12,8 @@ const avchdBody = document.querySelector("#avchd-table tbody");
 const photoBody = document.querySelector("#photo-table tbody");
 const otherList = document.getElementById("other-list");
 const otherBlock = document.getElementById("other-block");
+const avchdSelectAll = document.getElementById("avchd-select-all");
+const photoSelectAll = document.getElementById("photo-select-all");
 
 const convertBtn = document.getElementById("convert-btn");
 const progressSection = document.getElementById("progress-section");
@@ -31,10 +33,16 @@ function formatDate(iso) {
   return d.toLocaleString("es-ES");
 }
 
+function currentPrefix() {
+  return document.getElementById("prefix-input").value.trim().replace(/[^A-Za-z0-9_-]/g, "");
+}
+
 function outputName(iso, ext) {
   const d = new Date(iso);
   const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}${ext}`;
+  const stem = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+  const prefix = currentPrefix();
+  return `${prefix ? prefix + "_" : ""}${stem}${ext}`;
 }
 
 async function loadDirs(path) {
@@ -128,6 +136,42 @@ function renderRow(item, ext) {
   return tr;
 }
 
+function syncSelectAll(headerCb, tbody) {
+  const boxes = Array.from(tbody.querySelectorAll(".select-convert"));
+  const checkedCount = boxes.filter((cb) => cb.checked).length;
+  headerCb.checked = boxes.length > 0 && checkedCount === boxes.length;
+  headerCb.indeterminate = checkedCount > 0 && checkedCount < boxes.length;
+}
+
+function wireSelectAll(headerCb, tbody) {
+  headerCb.addEventListener("change", () => {
+    tbody.querySelectorAll(".select-convert").forEach((cb) => (cb.checked = headerCb.checked));
+    headerCb.indeterminate = false;
+  });
+  tbody.addEventListener("change", (e) => {
+    if (e.target.classList.contains("select-convert")) syncSelectAll(headerCb, tbody);
+  });
+}
+wireSelectAll(avchdSelectAll, avchdBody);
+wireSelectAll(photoSelectAll, photoBody);
+
+function renderResultsTables() {
+  if (!lastScan) return;
+
+  avchdBody.innerHTML = "";
+  lastScan.avchd_clips.forEach((item) => avchdBody.appendChild(renderRow(item, ".mp4")));
+  document.getElementById("avchd-empty").classList.toggle("hidden", lastScan.avchd_clips.length > 0);
+  syncSelectAll(avchdSelectAll, avchdBody);
+
+  photoBody.innerHTML = "";
+  lastScan.photos.forEach((item) => {
+    const ext = item.relative.slice(item.relative.lastIndexOf(".")).toLowerCase();
+    photoBody.appendChild(renderRow(item, ext));
+  });
+  document.getElementById("photo-empty").classList.toggle("hidden", lastScan.photos.length > 0);
+  syncSelectAll(photoSelectAll, photoBody);
+}
+
 scanBtn.addEventListener("click", async () => {
   scanStatus.textContent = "Escaneando…";
   resultsSection.classList.add("hidden");
@@ -153,16 +197,7 @@ scanBtn.addEventListener("click", async () => {
   document.getElementById("other-count").textContent = data.other_videos.length;
   outputDirNote.textContent = `Los ficheros convertidos se guardarán en: ${data.output_dir}`;
 
-  avchdBody.innerHTML = "";
-  data.avchd_clips.forEach((item) => avchdBody.appendChild(renderRow(item, ".mp4")));
-  document.getElementById("avchd-empty").classList.toggle("hidden", data.avchd_clips.length > 0);
-
-  photoBody.innerHTML = "";
-  data.photos.forEach((item) => {
-    const ext = item.relative.slice(item.relative.lastIndexOf(".")).toLowerCase();
-    photoBody.appendChild(renderRow(item, ext));
-  });
-  document.getElementById("photo-empty").classList.toggle("hidden", data.photos.length > 0);
+  renderResultsTables();
 
   otherList.innerHTML = "";
   otherBlock.classList.toggle("hidden", data.other_videos.length === 0);
@@ -174,6 +209,8 @@ scanBtn.addEventListener("click", async () => {
 
   resultsSection.classList.remove("hidden");
 });
+
+document.getElementById("prefix-input").addEventListener("input", renderResultsTables);
 
 function selectedPaths(tbody, selector = 'input[type="checkbox"]:checked') {
   return Array.from(tbody.querySelectorAll(selector)).map((cb) => cb.dataset.path);
@@ -201,6 +238,7 @@ convertBtn.addEventListener("click", async () => {
       photo_paths: photoPaths,
       transcode_audio: transcodeAudio,
       force: force,
+      prefix: currentPrefix(),
     }),
   });
   const data = await res.json();

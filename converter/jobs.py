@@ -30,7 +30,7 @@ def _new_item(path: str, relative: str, kind: str) -> dict:
 
 
 def start_job(root: str, avchd_paths: list[str], photo_paths: list[str],
-              transcode_audio: bool, force: bool) -> str:
+              transcode_audio: bool, force: bool, prefix: str = "") -> str:
     root_path = Path(root).expanduser().resolve()
     job_id = uuid.uuid4().hex
 
@@ -54,7 +54,7 @@ def start_job(root: str, avchd_paths: list[str], photo_paths: list[str],
         _jobs[job_id] = job
 
     thread = threading.Thread(
-        target=_run_job, args=(job_id, root_path, transcode_audio, force), daemon=True
+        target=_run_job, args=(job_id, root_path, transcode_audio, force, prefix), daemon=True
     )
     thread.start()
     return job_id
@@ -66,7 +66,7 @@ def get_job(job_id: str) -> dict | None:
         return dict(job) if job else None
 
 
-def _run_job(job_id: str, root_path: Path, transcode_audio: bool, force: bool) -> None:
+def _run_job(job_id: str, root_path: Path, transcode_audio: bool, force: bool, prefix: str = "") -> None:
     output_dir = root_path / OUTPUT_DIR_NAME
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -95,7 +95,7 @@ def _run_job(job_id: str, root_path: Path, transcode_audio: bool, force: bool) -
         is_video = item["type"] == "avchd"
         capture_dt, _ = get_capture_datetime(source, is_video=is_video)
         ext = ".mp4" if is_video else source.suffix.lower()
-        output_name = unique_name(capture_dt, ext, used_names)
+        output_name = unique_name(capture_dt, ext, used_names, prefix)
         dest = output_dir / output_name
 
         try:

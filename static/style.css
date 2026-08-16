@@ -199,6 +199,11 @@ th { color: var(--muted); font-weight: 600; }
 .tag.analyzed { color: var(--muted); }
 
 .options { display: flex; flex-direction: column; gap: 0.5rem; margin: 1rem 0; font-size: 0.9rem; }
+.options .prefix-label { display: flex; align-items: center; gap: 0.5rem; }
+.options .prefix-label input[type="text"] {
+  width: 10rem; padding: 0.4rem; border-radius: 6px; border: 1px solid var(--border);
+  background: var(--bg); color: var(--fg);
+}
 
 .block { margin-bottom: 1.25rem; }
 

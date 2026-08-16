@@ -136,11 +136,12 @@ def convert():
     photo_paths = data.get("photo_paths", [])
     transcode_audio = bool(data.get("transcode_audio", False))
     force = bool(data.get("force", False))
+    prefix = data.get("prefix", "")
 
     if not root or (not avchd_paths and not photo_paths):
         return jsonify({"error": "Nada que convertir"}), 400
 
-    job_id = start_job(root, avchd_paths, photo_paths, transcode_audio, force)
+    job_id = start_job(root, avchd_paths, photo_paths, transcode_audio, force, prefix)
     return jsonify({"job_id": job_id})
 
 
