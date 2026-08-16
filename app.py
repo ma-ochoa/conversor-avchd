@@ -24,7 +24,9 @@ from converter.stabilize import (
     ZOOM_AUTO_STATIC,
     ZOOM_MANUAL,
     VidstabMissingError,
+    discard_stabilize_draft,
     find_ffmpeg_with_vidstab,
+    save_stabilize_draft,
 )
 from converter.stabilize_jobs import get_job as get_stabilize_job, start_job as start_stabilize_job
 from converter.thumbnails import get_or_create_thumbnail
@@ -153,6 +155,19 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+def _parse_stab_params(data: dict) -> dict:
+    zoom_mode = data.get("zoom_mode", ZOOM_AUTO_STATIC)
+    if zoom_mode not in (ZOOM_AUTO_STATIC, ZOOM_AUTO_DYNAMIC, ZOOM_MANUAL):
+        zoom_mode = ZOOM_AUTO_STATIC
+    return {
+        "shakiness": int(_clamp(int(data.get("shakiness", 5)), 1, 10)),
+        "accuracy": int(_clamp(int(data.get("accuracy", 15)), 1, 15)),
+        "smoothing": int(_clamp(int(data.get("smoothing", 10)), 0, 100)),
+        "zoom_mode": zoom_mode,
+        "zoom_percent": _clamp(float(data.get("zoom_percent", 0.0)), -50.0, 50.0),
+    }
+
+
 @app.route("/api/stabilize", methods=["POST"])
 def stabilize():
     data = request.get_json(force=True)
@@ -169,16 +184,7 @@ def stabilize():
     except VidstabMissingError as exc:
         return jsonify({"error": str(exc)}), 500
 
-    zoom_mode = data.get("zoom_mode", ZOOM_AUTO_STATIC)
-    if zoom_mode not in (ZOOM_AUTO_STATIC, ZOOM_AUTO_DYNAMIC, ZOOM_MANUAL):
-        zoom_mode = ZOOM_AUTO_STATIC
-    params = {
-        "shakiness": int(_clamp(int(data.get("shakiness", 5)), 1, 10)),
-        "accuracy": int(_clamp(int(data.get("accuracy", 15)), 1, 15)),
-        "smoothing": int(_clamp(int(data.get("smoothing", 10)), 0, 100)),
-        "zoom_mode": zoom_mode,
-        "zoom_percent": _clamp(float(data.get("zoom_percent", 0.0)), -50.0, 50.0),
-    }
+    params = _parse_stab_params(data)
 
     job_id = start_stabilize_job(root, avchd_paths, force, fast_hw, params)
     return jsonify({"job_id": job_id})
@@ -190,6 +196,28 @@ def stabilize_status(job_id):
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)
+
+
+@app.route("/api/stabilize-draft", methods=["POST"])
+def stabilize_draft_save():
+    data = request.get_json(force=True)
+    root = data.get("root")
+    path = data.get("path")
+    if not root or not path:
+        return jsonify({"error": "Falta root o path"}), 400
+    entry = save_stabilize_draft(Path(root), Path(path), _parse_stab_params(data))
+    return jsonify({"draft": entry})
+
+
+@app.route("/api/stabilize-draft", methods=["DELETE"])
+def stabilize_draft_discard():
+    data = request.get_json(force=True)
+    root = data.get("root")
+    path = data.get("path")
+    if not root or not path:
+        return jsonify({"error": "Falta root o path"}), 400
+    discard_stabilize_draft(Path(root), Path(path))
+    return jsonify({"ok": True})
 
 
 @app.route("/estabilizacion")

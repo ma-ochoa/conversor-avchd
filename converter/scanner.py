@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .metadata import get_capture_datetime
 from .manifest import load_manifest
+from .stabilize import CACHE_DIR_NAME as STABILIZE_CACHE_DIR_NAME, has_cached_analysis
 
 AVCHD_EXTS = {".mts", ".m2ts"}
 MP4_FAMILY_EXTS = {".mp4", ".mov", ".m4v"}
@@ -50,6 +51,7 @@ def scan_folder(root: str) -> dict:
 
     manifest = load_manifest(root_path)
     stabilize_manifest = load_manifest(root_path, STABILIZE_DIR_NAME)
+    stabilize_drafts = load_manifest(root_path, STABILIZE_CACHE_DIR_NAME)
 
     avchd_clips = []
     photos = []
@@ -66,6 +68,12 @@ def scan_folder(root: str) -> dict:
             dt, source = get_capture_datetime(file_path, is_video=True)
             conv = _processed_entry(manifest, OUTPUT_DIR_NAME, root_path, file_path, size)
             stab = _processed_entry(stabilize_manifest, STABILIZE_DIR_NAME, root_path, file_path, size)
+            draft = stabilize_drafts.get(str(file_path))
+            has_analysis = has_cached_analysis(
+                root_path, file_path,
+                draft.get("shakiness", 5) if draft else 5,
+                draft.get("accuracy", 15) if draft else 15,
+            )
             avchd_clips.append(
                 {
                     "path": str(file_path),
@@ -79,6 +87,8 @@ def scan_folder(root: str) -> dict:
                     "already_stabilized": stab["done"],
                     "stabilize_output_name": stab["output_name"],
                     "stabilize_stats": stab["stats"],
+                    "has_analysis": has_analysis,
+                    "stabilize_draft": draft,
                 }
             )
         elif ext in PHOTO_EXTS:

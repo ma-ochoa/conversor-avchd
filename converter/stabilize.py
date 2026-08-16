@@ -16,6 +16,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from . import manifest
 from .ffmpeg_ops import get_duration_seconds
 
 _CANDIDATE_BINARIES = [
@@ -180,6 +181,51 @@ def ensure_analysis(root: Path, source: Path, shakiness: int = 5, accuracy: int 
         "trf_path": trf_path, "stats": stats, "reused": from_cache,
         "ffmpeg_bin": ffmpeg_bin, "duration": duration,
     }
+
+
+def has_cached_analysis(root: Path, source: Path, shakiness: int = 5, accuracy: int = 15) -> bool:
+    """Comprueba si ya existe un análisis (pase 1) válido en caché para este clip y
+    estos parámetros de detección, sin ejecutar ffmpeg. Pensado para el escaneo, que
+    recorre muchos clips y no puede permitirse lanzar un proceso por cada uno."""
+    trf_path, meta_path = _cache_paths(root, source.resolve(), shakiness, accuracy)
+    if not (trf_path.exists() and meta_path.exists()):
+        return False
+    try:
+        meta = json.loads(meta_path.read_text())
+    except (json.JSONDecodeError, OSError):
+        return False
+    try:
+        return meta.get("source_size") == source.stat().st_size
+    except OSError:
+        return False
+
+
+def save_stabilize_draft(root: Path, source: Path, params: dict) -> dict:
+    """Guarda los ajustes de estabilización elegidos por el usuario para este clip
+    (shakiness, accuracy, smoothing, zoom_mode, zoom_percent), sin necesidad de haber
+    renderizado (ni siquiera analizado) todavía el vídeo. Es un borrador independiente
+    tanto de la caché de análisis (.trf) como del manifiesto de vídeos ya renderizados,
+    para poder probar, guardar o descartar ajustes libremente."""
+    entry = {
+        "shakiness": int(params.get("shakiness", 5)),
+        "accuracy": int(params.get("accuracy", 15)),
+        "smoothing": int(params.get("smoothing", 10)),
+        "zoom_mode": params.get("zoom_mode", ZOOM_AUTO_STATIC),
+        "zoom_percent": float(params.get("zoom_percent", 0.0)),
+    }
+    manifest.record_entry(root, CACHE_DIR_NAME, str(source.resolve()), entry)
+    return entry
+
+
+def load_stabilize_draft(root: Path, source: Path) -> dict | None:
+    """Devuelve los ajustes guardados para este clip, o None si no se ha guardado
+    ninguno todavía."""
+    drafts = manifest.load_manifest(root, CACHE_DIR_NAME)
+    return drafts.get(str(source.resolve()))
+
+
+def discard_stabilize_draft(root: Path, source: Path) -> None:
+    manifest.remove_entry(root, CACHE_DIR_NAME, str(source.resolve()))
 
 
 def _parse_raw_path(dump_path: Path) -> list:

@@ -35,3 +35,13 @@ def record_entry(root: Path, subfolder: str, source_path: str, entry: dict) -> N
 
 def record_conversion(root: Path, source_path: str, size: int, output_name: str) -> None:
     record_entry(root, "conversion", source_path, {"size": size, "output": output_name})
+
+
+def remove_entry(root: Path, subfolder: str, source_path: str) -> None:
+    path = _manifest_path(root, subfolder)
+    with _lock:
+        manifest = load_manifest(root, subfolder)
+        if source_path in manifest:
+            del manifest[source_path]
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(manifest, f, indent=2, ensure_ascii=False)

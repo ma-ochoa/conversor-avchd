@@ -5,11 +5,12 @@
 > conversación anterior. Complementa a `README.md` (que es de cara al usuario); este
 > documento es técnico y explica el *por qué* de las decisiones, no solo el *qué*.
 >
-> Última actualización: sesión que reorganizó la app en 4 módulos con barra lateral
-> persistente (Conversión / Recompresión / Estabilización / Montaje) y añadió el
-> módulo de Recompresión. Repo: https://github.com/ma-ochoa/conversor-avchd — rama
-> `main`. Comprueba `git log --oneline -5` y `git status` al empezar para confirmar
-> que sigue así.
+> Última actualización: sesión que añadió el **historial de ajustes de
+> estabilización** — borrador por clip (guardar/probar/descartar) independiente de
+> renderizar, marcado de clips analizados/ajustados en el escaneo, y visibilidad
+> cruzada entre Estabilización y Montaje sin recomprimir. Repo:
+> https://github.com/ma-ochoa/conversor-avchd — rama `main`. Comprueba
+> `git log --oneline -5` y `git status` al empezar para confirmar que sigue así.
 
 ## Qué es esto
 
@@ -77,27 +78,34 @@ templates/montaje.html          Página de Montaje (editor)
 static/shell.js                 Recuerda la carpeta de proyecto entre módulos (localStorage)
 static/conversion.js            JS de Conversión
 static/recompresion.js          JS de Recompresión
-static/estabilizacion.js        JS de Estabilización
-static/montaje.js               JS del editor (912+ líneas, la pieza más grande)
+static/estabilizacion.js        JS de Estabilización (tabla + modal "Analizar y ajustar")
+static/stabilize_preview.js     ⭐ Preview de estabilización en canvas — compartido entre
+                                 Estabilización y Montaje (ver detalle abajo)
+static/montaje.js               JS del editor — usa stabilize_preview.js para su propio modal
 static/style.css                Estilos compartidos + layout de la barra lateral
-static/montaje.css              Estilos específicos del editor
+static/montaje.css              Estilos del editor, reutilizados también por Estabilización
+                                 (modal/canvas) — cargado desde ambas plantillas
 
 converter/
   ffmpeg_ops.py                 Remuxeo sin pérdida (remux_clip), FFMPEG_BIN="ffmpeg"
   metadata.py                   Fecha de captura vía exiftool (DateTimeOriginal, etc.)
   naming.py                     Nombres AAAAMMDD_HHMMSS.ext con desambiguación
   manifest.py                   .manifest.json genérico (qué ya se procesó, por carpeta)
-  scanner.py                    Escaneo recursivo: vídeos/fotos/otros formatos
+  scanner.py                    Escaneo recursivo: vídeos/fotos/otros formatos, marca
+                                 has_analysis/stabilize_draft por clip de vídeo
   jobs.py                       Job de "Convertir" (remuxeo + fotos)
   fonts.py                      Fuentes del sistema macOS para drawtext
   thumbnails.py                 Miniaturas .jpg cacheadas (carpeta .miniaturas/)
   project.py                    Guardar/cargar proyectos de montaje (JSON)
-  montaje_clips.py              Lista de clips disponibles para montar/recomprimir
+  montaje_clips.py              Lista de clips disponibles para montar/recomprimir,
+                                 con el borrador de estabilización enlazado por origen
 
   stabilize.py                  ⭐ Núcleo de estabilización — ver detalle abajo
-  stabilize_jobs.py             Job de "Estabilizar" (independiente)
+  stabilize_jobs.py             Job de "Estabilizar" (independiente) — usa el borrador
+                                 guardado del clip si existe, si no los parámetros globales
   proxy.py                      Genera/cachea proxy ligero (.proxies/) para el canvas
-  analyze_jobs.py               Job de "Analizar" (solo trayectoria, para el montaje)
+  analyze_jobs.py               Job de "Analizar" (solo trayectoria) — genérico, lo usan
+                                 tanto Montaje como el modal de Estabilización
   timeline_export.py            ⭐ Construye el filtro ffmpeg del montaje completo
   timeline_jobs.py              Job de "Exportar montaje"
 
@@ -135,6 +143,12 @@ Es el módulo más importante y el que más ha costado afinar. Funciones clave:
   **solo si el fotograma viene marcado como entrelazado** (AVCHD 1080i), dejando
   intacto el vídeo progresivo (4K/MP4 de cámaras modernas). Así se pueden mezclar
   fuentes AVCHD y 4K en el mismo montaje sin lógica condicional por extensión.
+- **`has_cached_analysis(root, source, shakiness, accuracy)`**: comprueba si el `.trf`
+  de esos parámetros ya existe y es válido (tamaño de origen coincide), sin ejecutar
+  ffmpeg. La usa `scanner.py` en cada clip del escaneo — por eso el escaneo no se
+  vuelve más lento aunque haya cientos de clips.
+- **`save_stabilize_draft` / `load_stabilize_draft` / `discard_stabilize_draft`**:
+  el "borrador" de ajustes por clip — ver la sección siguiente.
 
 ## `converter/timeline_export.py` — el montaje completo en una pasada
 
@@ -155,16 +169,24 @@ temporales por clip. Un clip nunca se recodifica dos veces (estabilizar y luego
 volver a codificar al exportar): el análisis se cachea, la codificación real ocurre
 una vez, en la exportación final.
 
-## Vista previa de estabilización en el montaje (lo último que se implementó)
+## Vista previa de estabilización en canvas (`static/stabilize_preview.js`)
 
-Flujo completo (botón "Estabilizar" en un clip de la línea de tiempo del montaje):
+Extraída a un módulo compartido — la usan tanto el modal de estabilización del
+Montaje (un clip de la línea de tiempo) como el modal "Analizar y ajustar" de la
+página de Estabilización (un clip cualquiera del escaneo). Es un `<script>` más,
+cargado antes de `montaje.js`/`estabilizacion.js` en sus respectivas plantillas —
+sin bundler, comparten scope global como el resto de la app (ver `shell.js`).
 
-1. **Analizar** (`POST /api/montaje/analyze` → `analyze_jobs.py`): ejecuta
+Flujo completo:
+
+1. **Analizar** (`POST /api/montaje/analyze` → `analyze_jobs.py` — el nombre de la
+   ruta es histórico, la usa cualquier página, no solo Montaje): ejecuta
    `get_or_create_proxy` (ver `proxy.py`, copia ligera 640px de ancho, misma
-   proporción/fps, en `<root>/.proxies/`) y `get_preview_analysis` en paralelo
-   conceptual (secuencial en el hilo). Devuelve la trayectoria bruta + ruta del proxy.
-2. **En el navegador** (`static/montaje.js`, sección "Suavizado y renderizado en
-   canvas"): con la trayectoria ya descargada, **todo lo demás es JavaScript puro, sin
+   proporción/fps, en `<root>/.proxies/`) y `get_preview_analysis`. Devuelve la
+   trayectoria bruta + ruta del proxy.
+2. **En el navegador** (`createStabilizePreview({video, canvas, seek, playBtn,
+   toggle})` → devuelve `{setupPreview, recomputeAndRender, renderFrame, stop, play,
+   ...}`): con la trayectoria ya descargada, **todo lo demás es JavaScript puro, sin
    servidor**:
    - `computeCorrections(analysis, smoothingWindow)`: acumula la trayectoria bruta
      (con recorte de valores atípicos a 4× la mediana — ver "Hallazgos"), aplica una
@@ -173,15 +195,61 @@ Flujo completo (botón "Estabilizar" en un clip de la línea de tiempo del monta
      cálculo real de `vid.stab`**, es una estimación proporcional al desplazamiento
      máximo detectado. Se documenta como aproximación tanto en el código como en el
      README.
-   - `renderStabilizeFrame()`: dibuja el proxy en un `<canvas>` aplicando la
-     corrección calculada (transform 2D), fotograma a fotograma, sincronizado con
-     `<video>` oculto que reproduce el proxy.
+   - `renderFrame()`: dibuja el proxy en un `<canvas>` aplicando la corrección
+     calculada (transform 2D), sincronizado con un `<video>` oculto que reproduce el
+     proxy.
    - Mover los sliders de suavizado/zoom → recalcula y redibuja al instante, cero
      llamadas de red.
-3. **Guardar**: la configuración (`shakiness, accuracy, smoothing, zoom_mode,
-   zoom_percent`) se adjunta al clip en memoria (`item.stabilize`) y viaja tal cual al
-   JSON del proyecto y a la exportación final, que sí usa el cálculo real de
+3. **Guardar**: en Montaje, la configuración se adjunta al clip en memoria
+   (`item.stabilize`) y viaja tal cual al JSON del proyecto y a la exportación final.
+   En Estabilización, se persiste en disco como "borrador" (ver siguiente sección) —
+   ambos caminos usan el mismo objeto `{shakiness, accuracy, smoothing, zoom_mode,
+   zoom_percent}` y, en la exportación/estabilización real, el mismo cálculo real de
    `vid.stab` (no la aproximación de JS).
+
+## Historial de ajustes de estabilización (borrador por clip, entre módulos)
+
+Petición del usuario: poder analizar/ajustar un clip en Estabilización, guardar o
+descartar esos ajustes, y que el resto de la app (el escaneo, Montaje) los vea sin
+tener que rebuscar en carpetas ni recomprimir nada. Piezas:
+
+- **Almacén** (`converter/stabilize.py::save_stabilize_draft` /
+  `load_stabilize_draft` / `discard_stabilize_draft`): reutiliza
+  `manifest.load_manifest`/`record_entry`/`remove_entry` con
+  `subfolder=".vidstab_cache"` → escribe en `<root>/.vidstab_cache/.manifest.json`,
+  clave = ruta absoluta del clip **original** (no del `.trf`, que vive en ficheros
+  hermanos con nombre-hash en esa misma carpeta — no colisionan). Es independiente de
+  si el clip se ha llegado a analizar o renderizar: solo guarda qué parámetros eligió
+  el usuario la última vez, para poder probarlos/guardarlos/descartarlos.
+- **Rutas**: `POST /api/stabilize-draft` (guarda) y `DELETE /api/stabilize-draft`
+  (descarta), body `{root, path, shakiness?, accuracy?, smoothing?, zoom_mode?,
+  zoom_percent?}`.
+- **Escaneo** (`scanner.py`): cada clip de vídeo lleva `has_analysis` (¿existe un
+  `.trf` válido para el shakiness/accuracy del borrador, o los de por defecto si no
+  hay borrador?) y `stabilize_draft` (el borrador tal cual, o `null`). La tabla de
+  Estabilización pinta con esto el estado: `—` / `🔍 analizado` / `🩹 ajustado`.
+- **Página de Estabilización** (`estabilizacion.js`): botón "🔍 Analizar y ajustar"
+  por fila abre el modal compartido, precargado con el borrador si existe. "Guardar
+  ajuste"/"Descartar ajuste guardado" llaman a las rutas de arriba y actualizan la
+  fila sin recargar toda la tabla. El botón masivo "Estabilizar marcados" sigue
+  mandando unos parámetros globales al job, pero **`stabilize_jobs.py` ahora
+  comprueba el borrador de cada clip y lo usa en vez de esos parámetros globales si
+  existe** — sin ningún cambio en el frontend, es puramente un `load_stabilize_draft`
+  antes de llamar a `stabilize_clip` en `_run_job`.
+- **Montaje** (`montaje_clips.py` + `montaje.js`): `montaje_clips.py` invierte el
+  `.manifest.json` de `conversion/`/`estabilizado/` (origen → nombre de salida) para,
+  dado un fichero ya convertido/estabilizado, encontrar su clip original y adjuntarle
+  `stabilize_draft` si lo tiene. La cuadrícula de clips pinta una insignia "🩹 ajuste
+  de estabilización guardado" y, al arrastrar el clip a la línea de tiempo,
+  `addClipToTimeline` copia ese borrador a `item.stabilize` automáticamente.
+  **Importante — guarda de doble estabilización**: esto solo pasa si
+  `clip.source === "convertido"` (el clip viene de `conversion/`, aún sin
+  estabilizar). Un clip que ya viene de `estabilizado/` es un vídeo YA procesado con
+  `vid.stab`; si se le aplicase además el borrador como `item.stabilize`, la
+  exportación final le metería `vidstabtransform` una segunda vez encima de un vídeo
+  que ya no tiembla — con resultados impredecibles. La insignia y la herencia se
+  omiten a propósito para esos clips (el borrador puede seguir viéndose en la propia
+  página de Estabilización, solo no se hereda en Montaje).
 
 ## Hallazgos técnicos importantes (para no repetir el trabajo de descubrirlos)
 
@@ -260,7 +328,7 @@ usuario o caché regenerable:
 | `montaje/proyectos/*.json` | Proyectos de montaje guardados | `project.py` |
 | `montaje/*_final.mp4` | Exportaciones finales del montaje | `timeline_jobs.py` |
 | `.miniaturas/` | Miniaturas .jpg cacheadas | `thumbnails.py` |
-| `.vidstab_cache/` | `.trf` + `.json` (stats) + `.path.json` (trayectoria) por clip | `stabilize.py` |
+| `.vidstab_cache/` | `.trf` + `.json` (stats) + `.path.json` (trayectoria) por clip, más `.manifest.json` (borrador de ajustes por clip, ver más arriba) | `stabilize.py` |
 | `.proxies/` | Proxies ligeros (640px) para el canvas | `proxy.py` |
 
 Ninguna de estas carpetas tiene límite de tamaño ni expiración — si en el futuro se
@@ -282,8 +350,11 @@ POST /api/scan                       Escanear carpeta (vídeos/fotos/otros) — 
                                       Conversión, Estabilización y Recompresión
 POST /api/convert                    Lanzar job de conversión
 GET  /api/status/<job_id>            Progreso de conversión
-POST /api/stabilize                  Lanzar job de estabilización (independiente)
+POST /api/stabilize                  Lanzar job de estabilización (independiente;
+                                      usa el borrador guardado de cada clip si existe)
 GET  /api/stabilize-status/<job_id>  Progreso de estabilización
+POST /api/stabilize-draft            Guardar el borrador de ajustes de un clip
+DELETE /api/stabilize-draft          Descartar el borrador de ajustes de un clip
 POST /api/recompress                 Lanzar job de recompresión
 GET  /api/recompress-status/<job_id> Progreso de recompresión
 GET  /api/montaje/clips?root=        Clips disponibles para montar (también los usa Recompresión)
@@ -334,7 +405,19 @@ exportación final.
    varias veces en esta sesión (análisis 4K de varias horas).
 2. Arrancar: `python3 app.py` (o el `.command`), servidor en `http://localhost:5050`.
    Flask con `debug=False` **no recarga plantillas ni código solo** — hay que
-   reiniciar el proceso tras cualquier cambio.
+   reiniciar el proceso tras **cualquier** cambio en un `.py` (las plantillas/JS/CSS
+   sí se sirven frescas en cada petición, esos no necesitan reinicio).
+   - En el Mac de pruebas, el `python3` del PATH por defecto (Homebrew, 3.12/3.14) no
+     tenía Flask instalado, y el único con Flask (`/usr/bin/python3`, el de Apple) es
+     3.9 — demasiado antiguo para la sintaxis `X | None` ya usada en el código. Se creó
+     un venv del proyecto (`.venv/`, ya en `.gitignore`) con
+     `python3 -m venv .venv && .venv/bin/pip install -r requirements.txt` y se lanzó
+     con `.venv/bin/python app.py`. Si el arranque normal falla por `ModuleNotFoundError:
+     flask` o por errores de sintaxis `|`, es este mismo problema — usar ese venv.
+   - `ffmpeg-full` (necesario para `vidstabdetect`/`vidstabtransform`) tampoco estaba
+     instalado en el Mac de pruebas a pesar de haber clips ya estabilizados de sesiones
+     anteriores — se instaló con `brew install ffmpeg-full` (bottled, no hace falta
+     compilar). Sin él, `find_ffmpeg_with_vidstab()` falla con un error claro en la UI.
 2. Material de prueba real ya presente en el repo local (no en git, son personales):
    - `private/AVCHD/BDMV/STREAM/*.MTS` — clips AVCHD 1080i reales (Sony ILCE-6400).
    - `Mago de Oz/private/M4ROOT/CLIP/*.MP4` — clips 4K reales (mismo tipo de cámara).

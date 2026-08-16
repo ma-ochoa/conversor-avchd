@@ -9,7 +9,7 @@ from pathlib import Path
 from .manifest import load_manifest, record_entry
 from .metadata import get_capture_datetime
 from .naming import unique_name
-from .stabilize import ZOOM_AUTO_STATIC, stabilize_clip
+from .stabilize import ZOOM_AUTO_STATIC, load_stabilize_draft, stabilize_clip
 
 OUTPUT_DIR_NAME = "estabilizado"
 
@@ -104,8 +104,10 @@ def _run_job(job_id: str, root_path: Path, force: bool, fast_hw: bool, stab_para
             def progress_cb(fraction, item=item):
                 item["percent"] = fraction
 
+            draft = load_stabilize_draft(root_path, source)
+            effective_params = {**stab_params, **draft} if draft else stab_params
             stats = stabilize_clip(
-                source, dest, root_path, progress_cb=progress_cb, fast_hw=fast_hw, **stab_params
+                source, dest, root_path, progress_cb=progress_cb, fast_hw=fast_hw, **effective_params
             )
 
             timestamp = capture_dt.timestamp()

@@ -195,6 +195,8 @@ th { color: var(--muted); font-weight: 600; }
 .tag { font-size: 0.75rem; padding: 0.1rem 0.4rem; border-radius: 4px; background: var(--bg); }
 .tag.done { color: var(--ok); }
 .tag.error { color: var(--err); }
+.tag.adjusted { color: var(--accent); }
+.tag.analyzed { color: var(--muted); }
 
 .options { display: flex; flex-direction: column; gap: 0.5rem; margin: 1rem 0; font-size: 0.9rem; }
 

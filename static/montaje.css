@@ -105,6 +105,7 @@
 .title-image-preview { max-width: 100%; max-height: 120px; border: 1px solid var(--border); border-radius: 6px; background: repeating-conic-gradient(#8883 0% 25%, transparent 0% 50%) 50% / 16px 16px; }
 
 .ti-stab-badge { font-size: 0.65rem; color: #4caf80; }
+.clip-stab-badge { font-size: 0.65rem; color: #4caf80; margin-top: 0.15rem; }
 
 .stabilize-modal-content { max-width: 760px; }
 

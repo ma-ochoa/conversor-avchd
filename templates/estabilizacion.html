@@ -1,5 +1,8 @@
 {% extends "_base.html" %}
 {% block title %}Estabilización — Conversor de vídeo{% endblock %}
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='montaje.css') }}">
+{% endblock %}
 
 {% block page_header %}
 <h1>🩹 Estabilización</h1>
@@ -26,7 +29,7 @@
 
     <table id="avchd-table">
       <thead><tr>
-        <th>Estabilizar</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Estado</th>
+        <th>Estabilizar</th><th>Origen</th><th>Fecha captura</th><th>Tamaño</th><th>Estado</th><th>Ajustar</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -85,8 +88,70 @@
     </table>
     <p id="stabilize-job-summary" class="muted"></p>
   </section>
+
+  <!-- Modal de análisis y ajuste de estabilización por clip -->
+  <div id="clip-stab-modal" class="modal hidden">
+    <div class="modal-content stabilize-modal-content">
+      <button class="modal-close" id="clip-stab-close">✕</button>
+      <h3>Analizar y ajustar estabilización</h3>
+      <p id="clip-stab-clip-name" class="muted"></p>
+      <p class="muted">El análisis completo (una vez por clip) tarda; en 4K bastante más que en 1080p.
+      Después puedes ajustar suavizado y zoom y ver el resultado aproximado al instante, sin volver a
+      analizar ni generar ningún vídeo. Los ajustes se guardan aparte — puedes probarlos, guardarlos o
+      descartarlos sin necesidad de recomprimir el clip.</p>
+
+      <div id="clip-stab-analyze-row">
+        <button id="clip-stab-analyze-btn" class="primary">🔍 Analizar clip</button>
+        <span id="clip-stab-analyze-status" class="status-text"></span>
+        <progress id="clip-stab-analyze-progress" max="1" value="0" class="hidden"></progress>
+      </div>
+
+      <div id="clip-stab-preview-wrap" class="hidden">
+        <div class="canvas-wrap">
+          <video id="clip-stab-proxy-video" muted playsinline class="offscreen-video"></video>
+          <canvas id="clip-stab-canvas" width="480" height="270"></canvas>
+        </div>
+        <div class="canvas-controls">
+          <button id="clip-stab-play-btn">▶️</button>
+          <input id="clip-stab-seek" type="range" min="0" max="1" step="0.001" value="0">
+          <label class="canvas-toggle"><input type="checkbox" id="clip-stab-preview-toggle" checked> con corrección</label>
+        </div>
+      </div>
+
+      <div class="stab-mode-row">
+        <label><input type="radio" name="clip-stab-mode" id="clip-stab-mode-auto" value="auto" checked> Automático</label>
+        <label><input type="radio" name="clip-stab-mode" id="clip-stab-mode-custom" value="custom"> Personalizado</label>
+      </div>
+
+      <div id="clip-stab-custom-panel" class="stab-custom-panel hidden">
+        <label>Sensibilidad al temblor: <span id="clip-stab-shakiness-value">5</span>/10
+          <input type="range" id="clip-stab-shakiness" min="1" max="10" step="1" value="5">
+        </label>
+        <p class="muted hint">Cambiar esto sí requiere volver a analizar.</p>
+        <label>Suavizado: <span id="clip-stab-smoothing-value">10</span>
+          <input type="range" id="clip-stab-smoothing" min="0" max="50" step="1" value="10">
+        </label>
+        <label>Zoom / recorte
+          <select id="clip-stab-zoom-mode">
+            <option value="auto_static">Automático — recorte fijo mínimo</option>
+            <option value="auto_dynamic">Automático dinámico</option>
+            <option value="manual">Manual — porcentaje fijo</option>
+          </select>
+        </label>
+        <label id="clip-stab-zoom-percent-row" class="hidden">Zoom manual: <span id="clip-stab-zoom-percent-value">10</span>%
+          <input type="range" id="clip-stab-zoom-percent" min="0" max="50" step="1" value="10">
+        </label>
+      </div>
+
+      <div class="modal-actions">
+        <button id="clip-stab-discard-btn">Descartar ajuste guardado</button>
+        <button id="clip-stab-save-btn" class="primary">Guardar ajuste</button>
+      </div>
+    </div>
+  </div>
 {% endblock %}
 
 {% block extra_scripts %}
+<script src="{{ url_for('static', filename='stabilize_preview.js') }}"></script>
 <script src="{{ url_for('static', filename='estabilizacion.js') }}"></script>
 {% endblock %}

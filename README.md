@@ -172,6 +172,34 @@ suavizado o el zoom y vuelves a procesar el mismo clip, no hace falta repetirlo 
 la fase de corrección, mucho más rápida. Cambiar la sensibilidad al temblor sí invalida
 la caché y repite el análisis.
 
+### Analizar y ajustar un clip antes de recomprimir
+
+Cada fila de la tabla tiene un botón **"🔍 Analizar y ajustar"** que abre una
+previsualización del clip en el navegador — mueves los sliders de suavizado/zoom y ves
+al instante una aproximación del resultado, **sin generar ningún vídeo nuevo**. Cuando
+el ajuste te convence, **"Guardar ajuste"** lo deja guardado para ese clip (puedes
+volver más tarde, probar otra cosa, y guardar o **"Descartar ajuste guardado"** sin que
+eso afecte a si el clip está o no ya estabilizado en disco).
+
+La columna "Estado" refleja esto por clip:
+
+- **—**: sin analizar.
+- **🔍 analizado**: ya se ha calculado el análisis (pase lento), pero no hay ningún
+  ajuste guardado.
+- **🩹 ajustado**: hay un ajuste guardado para ese clip.
+- **ya estabilizado**: el clip ya tiene una versión estabilizada generada.
+
+El botón masivo **"Estabilizar marcados"** usa automáticamente el ajuste guardado de
+cada clip (si lo tiene) en vez de los parámetros del panel de arriba — así no hace
+falta reconfigurar nada clip a clip antes de lanzar el lote.
+
+Los clips ya convertidos con un ajuste guardado **también se marcan en el Montaje**
+(cuadrícula de clips, insignia "🩹 ajuste de estabilización guardado") y, al
+arrastrarlos a la línea de tiempo, el ajuste se aplica automáticamente al clip — sin
+tener que volver a Estabilización ni buscar nada en carpetas. (Un clip que ya viene de
+una carpeta `estabilizado/` no hereda el ajuste al montaje, para no estabilizarlo dos
+veces — el ajuste guardado sigue visible en la propia página de Estabilización.)
+
 **Modo rápido (VideoToolbox)**: casilla opcional que usa el motor de vídeo del chip en
 vez de codificar por software. Solo acelera de verdad en Apple Silicon con motor de
 vídeo dedicado (chips M-series recientes, idealmente M5 o superior) — en otro hardware
@@ -279,11 +307,15 @@ diferencia del remuxeo, no es sin pérdida.
   de tiempo. Cuando un clip tiene estabilización, `vidstabtransform` se inserta en su
   tramo del grafo, sobre el clip *completo* (no el recorte) — `vid.stab` necesita ver
   la misma secuencia de fotogramas que analizó, así que el recorte se aplica después.
-- La vista previa de estabilización en el montaje usa `vidstabtransform` con `debug=1`
-  para volcar la trayectoria de cámara detectada, fotograma a fotograma, sin codificar
-  vídeo (mucho más rápido que una pasada completa); el navegador la suaviza y dibuja
-  con `<canvas>` sobre una copia ligera del clip (`.proxies/`), sin ninguna llamada al
+- La vista previa de estabilización (tanto en Montaje como en "Analizar y ajustar" de
+  Estabilización — es el mismo componente) usa `vidstabtransform` con `debug=1` para
+  volcar la trayectoria de cámara detectada, fotograma a fotograma, sin codificar vídeo
+  (mucho más rápido que una pasada completa); el navegador la suaviza y dibuja con
+  `<canvas>` sobre una copia ligera del clip (`.proxies/`), sin ninguna llamada al
   servidor al mover los sliders de suavizado/zoom.
+- El ajuste guardado de un clip (`.vidstab_cache/.manifest.json`) es solo la elección
+  de parámetros, no un vídeo — es independiente de si ese clip llegó a analizarse o
+  estabilizarse de verdad, para poder probarlo/guardarlo/descartarlo libremente.
 
 ## Pendiente
 

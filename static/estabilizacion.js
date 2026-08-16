@@ -118,6 +118,20 @@ function renderRow(item) {
 
   const statusTd = document.createElement("td");
   statusTd.dataset.statsCell = "1";
+  renderStatusCell(statusTd, item);
+
+  const adjustTd = document.createElement("td");
+  const adjustBtn = document.createElement("button");
+  adjustBtn.textContent = "🔍 Analizar y ajustar";
+  adjustBtn.addEventListener("click", () => openClipStabModal(item.path));
+  adjustTd.appendChild(adjustBtn);
+
+  tr.append(cbTd, nameTd, dateTd, sizeTd, statusTd, adjustTd);
+  return tr;
+}
+
+function renderStatusCell(statusTd, item) {
+  statusTd.innerHTML = "";
   if (item.already_stabilized) {
     const span = document.createElement("span");
     span.className = "tag done";
@@ -125,12 +139,26 @@ function renderRow(item) {
     statusTd.appendChild(span);
     statusTd.appendChild(document.createElement("br"));
     statusTd.appendChild(document.createTextNode(formatStats(item.stabilize_stats)));
-  } else {
-    statusTd.textContent = "—";
+    return;
   }
-
-  tr.append(cbTd, nameTd, dateTd, sizeTd, statusTd);
-  return tr;
+  if (item.stabilize_draft) {
+    const span = document.createElement("span");
+    span.className = "tag adjusted";
+    span.textContent = "🩹 ajustado";
+    statusTd.appendChild(span);
+    if (item.has_analysis) {
+      statusTd.appendChild(document.createTextNode(" (analizado con este ajuste)"));
+    }
+    return;
+  }
+  if (item.has_analysis) {
+    const span = document.createElement("span");
+    span.className = "tag analyzed";
+    span.textContent = "🔍 analizado";
+    statusTd.appendChild(span);
+    return;
+  }
+  statusTd.textContent = "—";
 }
 
 scanBtn.addEventListener("click", async () => {
@@ -302,3 +330,206 @@ async function pollStabilizeJob(jobId) {
 
   setTimeout(() => pollStabilizeJob(jobId), 800);
 }
+
+// ---------- Modal de análisis y ajuste por clip (marca, previsualiza, guarda/descarta) ----------
+
+const clipStabModal = document.getElementById("clip-stab-modal");
+const clipStabClose = document.getElementById("clip-stab-close");
+const clipStabClipName = document.getElementById("clip-stab-clip-name");
+const clipStabAnalyzeBtn = document.getElementById("clip-stab-analyze-btn");
+const clipStabAnalyzeStatus = document.getElementById("clip-stab-analyze-status");
+const clipStabAnalyzeProgress = document.getElementById("clip-stab-analyze-progress");
+const clipStabPreviewWrap = document.getElementById("clip-stab-preview-wrap");
+const clipStabPlayBtn = document.getElementById("clip-stab-play-btn");
+const clipStabSeek = document.getElementById("clip-stab-seek");
+const clipStabPreviewToggle = document.getElementById("clip-stab-preview-toggle");
+const clipStabCustomPanel = document.getElementById("clip-stab-custom-panel");
+const clipStabZoomModeSelect = document.getElementById("clip-stab-zoom-mode");
+const clipStabZoomPercentRow = document.getElementById("clip-stab-zoom-percent-row");
+const clipStabDiscardBtn = document.getElementById("clip-stab-discard-btn");
+const clipStabSaveBtn = document.getElementById("clip-stab-save-btn");
+
+const clipStabPreview = createStabilizePreview({
+  video: document.getElementById("clip-stab-proxy-video"),
+  canvas: document.getElementById("clip-stab-canvas"),
+  seek: clipStabSeek,
+  playBtn: clipStabPlayBtn,
+  toggle: clipStabPreviewToggle,
+});
+
+let clipStabEditingPath = null;
+let clipStabAnalyzedThisSession = false;
+
+document.querySelectorAll('input[name="clip-stab-mode"]').forEach((radio) => {
+  radio.addEventListener("change", () => {
+    clipStabCustomPanel.classList.toggle("hidden", document.getElementById("clip-stab-mode-auto").checked);
+    clipStabPreview.recomputeAndRender(clipStabParams());
+  });
+});
+["clip-stab-shakiness", "clip-stab-smoothing", "clip-stab-zoom-percent"].forEach((id) => {
+  const input = document.getElementById(id);
+  const label = document.getElementById(`${id}-value`);
+  input.addEventListener("input", () => {
+    label.textContent = input.value;
+    if (id !== "clip-stab-shakiness") clipStabPreview.recomputeAndRender(clipStabParams());
+  });
+});
+clipStabZoomModeSelect.addEventListener("change", () => {
+  clipStabZoomPercentRow.classList.toggle("hidden", clipStabZoomModeSelect.value !== "manual");
+  clipStabPreview.recomputeAndRender(clipStabParams());
+});
+
+function clipStabParams() {
+  if (document.getElementById("clip-stab-mode-auto").checked) {
+    return { shakiness: 5, accuracy: 15, smoothing: 10, zoom_mode: "auto_static", zoom_percent: 0 };
+  }
+  return {
+    shakiness: parseInt(document.getElementById("clip-stab-shakiness").value, 10),
+    accuracy: 15,
+    smoothing: parseInt(document.getElementById("clip-stab-smoothing").value, 10),
+    zoom_mode: clipStabZoomModeSelect.value,
+    zoom_percent: parseFloat(document.getElementById("clip-stab-zoom-percent").value),
+  };
+}
+
+function findClip(path) {
+  return (lastScan && lastScan.avchd_clips || []).find((c) => c.path === path);
+}
+
+function refreshRowStatus(path) {
+  const clip = findClip(path);
+  const cb = avchdBody.querySelector(`.select-stabilize[data-path="${CSS.escape(path)}"]`);
+  const row = cb && cb.closest("tr");
+  const statusTd = row && row.querySelector("td[data-stats-cell]");
+  if (clip && statusTd) renderStatusCell(statusTd, clip);
+}
+
+function openClipStabModal(path) {
+  clipStabEditingPath = path;
+  clipStabAnalyzedThisSession = false;
+  const clip = findClip(path);
+  const draft = clip && clip.stabilize_draft;
+
+  clipStabPreview.stop();
+  clipStabPreviewWrap.classList.add("hidden");
+  clipStabAnalyzeStatus.textContent = "";
+  clipStabAnalyzeProgress.classList.add("hidden");
+  clipStabClipName.textContent = clip ? clip.relative : path;
+
+  const isCustom = draft && (draft.zoom_mode !== "auto_static" || draft.smoothing !== 10 || draft.shakiness !== 5);
+  document.getElementById("clip-stab-mode-auto").checked = !isCustom;
+  document.getElementById("clip-stab-mode-custom").checked = !!isCustom;
+  clipStabCustomPanel.classList.toggle("hidden", !isCustom);
+  const shakiness = draft ? draft.shakiness : 5;
+  const smoothing = draft ? draft.smoothing : 10;
+  const zoomMode = draft ? draft.zoom_mode : "auto_static";
+  const zoomPercent = draft ? draft.zoom_percent : 10;
+  document.getElementById("clip-stab-shakiness").value = shakiness;
+  document.getElementById("clip-stab-shakiness-value").textContent = shakiness;
+  document.getElementById("clip-stab-smoothing").value = smoothing;
+  document.getElementById("clip-stab-smoothing-value").textContent = smoothing;
+  clipStabZoomModeSelect.value = zoomMode;
+  document.getElementById("clip-stab-zoom-percent").value = zoomPercent;
+  document.getElementById("clip-stab-zoom-percent-value").textContent = zoomPercent;
+  clipStabZoomPercentRow.classList.toggle("hidden", zoomMode !== "manual");
+
+  clipStabModal.classList.remove("hidden");
+}
+
+clipStabClose.addEventListener("click", () => {
+  clipStabPreview.stop();
+  clipStabModal.classList.add("hidden");
+});
+clipStabModal.addEventListener("click", (e) => {
+  if (e.target === clipStabModal) clipStabClose.click();
+});
+
+clipStabAnalyzeBtn.addEventListener("click", async () => {
+  if (!lastScan || !clipStabEditingPath) return;
+  const params = clipStabParams();
+  clipStabAnalyzeBtn.disabled = true;
+  clipStabAnalyzeStatus.textContent = "Analizando… (puede tardar, sobre todo la primera vez en 4K)";
+  clipStabAnalyzeProgress.classList.remove("hidden");
+  clipStabAnalyzeProgress.value = 0;
+
+  const res = await fetch("/api/montaje/analyze", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      root: lastScan.root, path: clipStabEditingPath,
+      shakiness: params.shakiness, accuracy: params.accuracy,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    clipStabAnalyzeStatus.textContent = data.error;
+    clipStabAnalyzeBtn.disabled = false;
+    return;
+  }
+  pollClipStabAnalyze(data.job_id);
+});
+
+async function pollClipStabAnalyze(jobId) {
+  const res = await fetch(`/api/montaje/analyze-status/${jobId}`);
+  const job = await res.json();
+  if (job.error) {
+    clipStabAnalyzeStatus.textContent = job.error;
+    clipStabAnalyzeBtn.disabled = false;
+    return;
+  }
+  clipStabAnalyzeProgress.value = job.percent;
+  if (job.status === "completado") {
+    const analysis = job.data;
+    const conf = analysis.stats && analysis.stats.confidence_percent;
+    clipStabAnalyzeStatus.textContent =
+      `Listo (${analysis.path.length} fotogramas${conf != null ? " · confianza " + conf + "%" : ""})`;
+    clipStabAnalyzeBtn.disabled = false;
+    clipStabAnalyzedThisSession = true;
+    clipStabPreviewWrap.classList.remove("hidden");
+    clipStabPreview.setupPreview(analysis).then(() => clipStabPreview.recomputeAndRender(clipStabParams()));
+    return;
+  }
+  if (job.status === "error") {
+    clipStabAnalyzeStatus.textContent = job.error;
+    clipStabAnalyzeBtn.disabled = false;
+    return;
+  }
+  setTimeout(() => pollClipStabAnalyze(jobId), 700);
+}
+
+clipStabSaveBtn.addEventListener("click", async () => {
+  if (!lastScan || !clipStabEditingPath) return;
+  const params = clipStabParams();
+  const res = await fetch("/api/stabilize-draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ root: lastScan.root, path: clipStabEditingPath, ...params }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    clipStabAnalyzeStatus.textContent = data.error;
+    return;
+  }
+  const clip = findClip(clipStabEditingPath);
+  if (clip) {
+    clip.stabilize_draft = data.draft;
+    if (clipStabAnalyzedThisSession) clip.has_analysis = true;
+  }
+  refreshRowStatus(clipStabEditingPath);
+  clipStabPreview.stop();
+  clipStabModal.classList.add("hidden");
+});
+
+clipStabDiscardBtn.addEventListener("click", async () => {
+  if (!lastScan || !clipStabEditingPath) return;
+  await fetch("/api/stabilize-draft", {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ root: lastScan.root, path: clipStabEditingPath }),
+  });
+  const clip = findClip(clipStabEditingPath);
+  if (clip) clip.stabilize_draft = null;
+  refreshRowStatus(clipStabEditingPath);
+  clipStabPreview.stop();
+  clipStabModal.classList.add("hidden");
+});
