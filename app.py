@@ -77,10 +77,18 @@ def browse():
         return jsonify({"error": f"No es una carpeta: {path}"}), 400
 
     try:
-        entries = sorted(
-            (p for p in path.iterdir() if p.is_dir() and not p.name.startswith(".")),
-            key=lambda p: p.name.lower(),
-        )
+        entries = []
+        for p in path.iterdir():
+            if p.name.startswith("."):
+                continue
+            try:
+                if p.is_dir():
+                    entries.append(p)
+            except PermissionError:
+                # Alguna carpeta puntual sin acceso (p. ej. .Trash a través del
+                # montaje de Docker en macOS) no debe tumbar el listado entero.
+                continue
+        entries.sort(key=lambda p: p.name.lower())
     except PermissionError:
         return jsonify({"error": f"Sin permiso para leer: {path}"}), 403
 
