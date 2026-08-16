@@ -192,38 +192,7 @@ function selectedPaths(tbody, selector) {
   return Array.from(tbody.querySelectorAll(selector)).map((cb) => cb.dataset.path);
 }
 
-const stabCustomPanel = document.getElementById("stab-custom-panel");
-const zoomModeSelect = document.getElementById("zoom-mode");
-const zoomPercentRow = document.getElementById("zoom-percent-row");
-
-document.querySelectorAll('input[name="stab-mode"]').forEach((radio) => {
-  radio.addEventListener("change", () => {
-    stabCustomPanel.classList.toggle("hidden", document.getElementById("stab-mode-auto").checked);
-  });
-});
-
-["shakiness", "smoothing", "zoom-percent"].forEach((id) => {
-  const input = document.getElementById(id);
-  const label = document.getElementById(`${id}-value`);
-  input.addEventListener("input", () => (label.textContent = input.value));
-});
-
-zoomModeSelect.addEventListener("change", () => {
-  zoomPercentRow.classList.toggle("hidden", zoomModeSelect.value !== "manual");
-});
-
-function stabilizeParams() {
-  if (document.getElementById("stab-mode-auto").checked) {
-    return { shakiness: 5, accuracy: 15, smoothing: 10, zoom_mode: "auto_static", zoom_percent: 0 };
-  }
-  return {
-    shakiness: parseInt(document.getElementById("shakiness").value, 10),
-    accuracy: 15,
-    smoothing: parseInt(document.getElementById("smoothing").value, 10),
-    zoom_mode: zoomModeSelect.value,
-    zoom_percent: parseFloat(document.getElementById("zoom-percent").value),
-  };
-}
+const bulkStabParamsPanel = createStabParamsPanel("bulk-stab");
 
 stabilizeBtn.addEventListener("click", async () => {
   if (!lastScan) return;
@@ -242,7 +211,7 @@ stabilizeBtn.addEventListener("click", async () => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       root: lastScan.root, avchd_paths: avchdPaths, force: force, fast_hw: fastHw,
-      ...stabilizeParams(),
+      ...bulkStabParamsPanel.getParams(),
     }),
   });
   const data = await res.json();
@@ -343,11 +312,9 @@ const clipStabPreviewWrap = document.getElementById("clip-stab-preview-wrap");
 const clipStabPlayBtn = document.getElementById("clip-stab-play-btn");
 const clipStabSeek = document.getElementById("clip-stab-seek");
 const clipStabPreviewToggle = document.getElementById("clip-stab-preview-toggle");
-const clipStabCustomPanel = document.getElementById("clip-stab-custom-panel");
-const clipStabZoomModeSelect = document.getElementById("clip-stab-zoom-mode");
-const clipStabZoomPercentRow = document.getElementById("clip-stab-zoom-percent-row");
 const clipStabDiscardBtn = document.getElementById("clip-stab-discard-btn");
 const clipStabSaveBtn = document.getElementById("clip-stab-save-btn");
+const clipStabPropagateBtn = document.getElementById("clip-stab-propagate-btn");
 
 const clipStabPreview = createStabilizePreview({
   video: document.getElementById("clip-stab-proxy-video"),
@@ -357,40 +324,11 @@ const clipStabPreview = createStabilizePreview({
   toggle: clipStabPreviewToggle,
 });
 
+const clipStabParamsPanel = createStabParamsPanel("clip-stab", {
+  onChange: (params) => clipStabPreview.recomputeAndRender(params),
+});
+
 let clipStabEditingPath = null;
-let clipStabAnalyzedThisSession = false;
-
-document.querySelectorAll('input[name="clip-stab-mode"]').forEach((radio) => {
-  radio.addEventListener("change", () => {
-    clipStabCustomPanel.classList.toggle("hidden", document.getElementById("clip-stab-mode-auto").checked);
-    clipStabPreview.recomputeAndRender(clipStabParams());
-  });
-});
-["clip-stab-shakiness", "clip-stab-smoothing", "clip-stab-zoom-percent"].forEach((id) => {
-  const input = document.getElementById(id);
-  const label = document.getElementById(`${id}-value`);
-  input.addEventListener("input", () => {
-    label.textContent = input.value;
-    if (id !== "clip-stab-shakiness") clipStabPreview.recomputeAndRender(clipStabParams());
-  });
-});
-clipStabZoomModeSelect.addEventListener("change", () => {
-  clipStabZoomPercentRow.classList.toggle("hidden", clipStabZoomModeSelect.value !== "manual");
-  clipStabPreview.recomputeAndRender(clipStabParams());
-});
-
-function clipStabParams() {
-  if (document.getElementById("clip-stab-mode-auto").checked) {
-    return { shakiness: 5, accuracy: 15, smoothing: 10, zoom_mode: "auto_static", zoom_percent: 0 };
-  }
-  return {
-    shakiness: parseInt(document.getElementById("clip-stab-shakiness").value, 10),
-    accuracy: 15,
-    smoothing: parseInt(document.getElementById("clip-stab-smoothing").value, 10),
-    zoom_mode: clipStabZoomModeSelect.value,
-    zoom_percent: parseFloat(document.getElementById("clip-stab-zoom-percent").value),
-  };
-}
 
 function findClip(path) {
   return (lastScan && lastScan.avchd_clips || []).find((c) => c.path === path);
@@ -404,6 +342,8 @@ function refreshRowStatus(path) {
   if (clip && statusTd) renderStatusCell(statusTd, clip);
 }
 
+let clipStabAnalyzedThisSession = false;
+
 function openClipStabModal(path) {
   clipStabEditingPath = path;
   clipStabAnalyzedThisSession = false;
@@ -415,25 +355,15 @@ function openClipStabModal(path) {
   clipStabAnalyzeStatus.textContent = "";
   clipStabAnalyzeProgress.classList.add("hidden");
   clipStabClipName.textContent = clip ? clip.relative : path;
-
-  const isCustom = draft && (draft.zoom_mode !== "auto_static" || draft.smoothing !== 10 || draft.shakiness !== 5);
-  document.getElementById("clip-stab-mode-auto").checked = !isCustom;
-  document.getElementById("clip-stab-mode-custom").checked = !!isCustom;
-  clipStabCustomPanel.classList.toggle("hidden", !isCustom);
-  const shakiness = draft ? draft.shakiness : 5;
-  const smoothing = draft ? draft.smoothing : 10;
-  const zoomMode = draft ? draft.zoom_mode : "auto_static";
-  const zoomPercent = draft ? draft.zoom_percent : 10;
-  document.getElementById("clip-stab-shakiness").value = shakiness;
-  document.getElementById("clip-stab-shakiness-value").textContent = shakiness;
-  document.getElementById("clip-stab-smoothing").value = smoothing;
-  document.getElementById("clip-stab-smoothing-value").textContent = smoothing;
-  clipStabZoomModeSelect.value = zoomMode;
-  document.getElementById("clip-stab-zoom-percent").value = zoomPercent;
-  document.getElementById("clip-stab-zoom-percent-value").textContent = zoomPercent;
-  clipStabZoomPercentRow.classList.toggle("hidden", zoomMode !== "manual");
-
+  clipStabParamsPanel.setParams(draft);
   clipStabModal.classList.remove("hidden");
+
+  // Si ya hay un análisis en caché que coincide con estos parámetros (el escaneo ya
+  // lo comprobó al construir has_analysis), no hace falta pulsar "Analizar clip": se
+  // carga la previsualización directamente.
+  if (clip && clip.has_analysis) {
+    runClipAnalysis();
+  }
 }
 
 clipStabClose.addEventListener("click", () => {
@@ -444,30 +374,33 @@ clipStabModal.addEventListener("click", (e) => {
   if (e.target === clipStabModal) clipStabClose.click();
 });
 
-clipStabAnalyzeBtn.addEventListener("click", async () => {
+function runClipAnalysis() {
   if (!lastScan || !clipStabEditingPath) return;
-  const params = clipStabParams();
+  const params = clipStabParamsPanel.getParams();
   clipStabAnalyzeBtn.disabled = true;
   clipStabAnalyzeStatus.textContent = "Analizando… (puede tardar, sobre todo la primera vez en 4K)";
   clipStabAnalyzeProgress.classList.remove("hidden");
   clipStabAnalyzeProgress.value = 0;
 
-  const res = await fetch("/api/montaje/analyze", {
+  fetch("/api/montaje/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       root: lastScan.root, path: clipStabEditingPath,
       shakiness: params.shakiness, accuracy: params.accuracy,
+      stepsize: params.stepsize, mincontrast: params.mincontrast,
     }),
+  }).then((res) => res.json()).then((data) => {
+    if (data.error) {
+      clipStabAnalyzeStatus.textContent = data.error;
+      clipStabAnalyzeBtn.disabled = false;
+      return;
+    }
+    pollClipStabAnalyze(data.job_id);
   });
-  const data = await res.json();
-  if (data.error) {
-    clipStabAnalyzeStatus.textContent = data.error;
-    clipStabAnalyzeBtn.disabled = false;
-    return;
-  }
-  pollClipStabAnalyze(data.job_id);
-});
+}
+
+clipStabAnalyzeBtn.addEventListener("click", runClipAnalysis);
 
 async function pollClipStabAnalyze(jobId) {
   const res = await fetch(`/api/montaje/analyze-status/${jobId}`);
@@ -486,7 +419,7 @@ async function pollClipStabAnalyze(jobId) {
     clipStabAnalyzeBtn.disabled = false;
     clipStabAnalyzedThisSession = true;
     clipStabPreviewWrap.classList.remove("hidden");
-    clipStabPreview.setupPreview(analysis).then(() => clipStabPreview.recomputeAndRender(clipStabParams()));
+    clipStabPreview.setupPreview(analysis).then(() => clipStabPreview.recomputeAndRender(clipStabParamsPanel.getParams()));
     return;
   }
   if (job.status === "error") {
@@ -499,7 +432,7 @@ async function pollClipStabAnalyze(jobId) {
 
 clipStabSaveBtn.addEventListener("click", async () => {
   if (!lastScan || !clipStabEditingPath) return;
-  const params = clipStabParams();
+  const params = clipStabParamsPanel.getParams();
   const res = await fetch("/api/stabilize-draft", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -532,4 +465,87 @@ clipStabDiscardBtn.addEventListener("click", async () => {
   refreshRowStatus(clipStabEditingPath);
   clipStabPreview.stop();
   clipStabModal.classList.add("hidden");
+});
+
+// ---------- Propagar ajustes a otros clips de la misma carpeta ----------
+
+const propagateModal = document.getElementById("propagate-modal");
+const propagateClose = document.getElementById("propagate-close");
+const propagateList = document.getElementById("propagate-list");
+const propagateSelectAllBtn = document.getElementById("propagate-select-all-btn");
+const propagateApplyBtn = document.getElementById("propagate-apply-btn");
+const propagateStatus = document.getElementById("propagate-status");
+
+function folderOf(relativePath) {
+  const idx = relativePath.lastIndexOf("/");
+  return idx === -1 ? "" : relativePath.slice(0, idx);
+}
+
+clipStabPropagateBtn.addEventListener("click", () => {
+  const current = findClip(clipStabEditingPath);
+  if (!current) return;
+  const folder = folderOf(current.relative);
+  const siblings = (lastScan.avchd_clips || []).filter(
+    (c) => c.path !== current.path && folderOf(c.relative) === folder
+  );
+
+  propagateStatus.textContent = "";
+  propagateList.innerHTML = "";
+  if (siblings.length === 0) {
+    propagateList.innerHTML = "<li class=\"muted\">No hay más clips en esta misma carpeta.</li>";
+  }
+  siblings.forEach((clip) => {
+    const li = document.createElement("li");
+    const label = document.createElement("label");
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.className = "propagate-target";
+    cb.dataset.path = clip.path;
+    label.append(cb, document.createTextNode(clip.relative));
+    li.appendChild(label);
+    propagateList.appendChild(li);
+  });
+
+  propagateModal.classList.remove("hidden");
+});
+
+propagateClose.addEventListener("click", () => propagateModal.classList.add("hidden"));
+propagateModal.addEventListener("click", (e) => {
+  if (e.target === propagateModal) propagateModal.classList.add("hidden");
+});
+
+propagateSelectAllBtn.addEventListener("click", () => {
+  const boxes = Array.from(propagateList.querySelectorAll(".propagate-target"));
+  const allChecked = boxes.length > 0 && boxes.every((cb) => cb.checked);
+  boxes.forEach((cb) => (cb.checked = !allChecked));
+});
+
+propagateApplyBtn.addEventListener("click", async () => {
+  const targets = Array.from(propagateList.querySelectorAll(".propagate-target:checked")).map((cb) => cb.dataset.path);
+  if (targets.length === 0) {
+    propagateStatus.textContent = "No hay clips marcados.";
+    return;
+  }
+  propagateApplyBtn.disabled = true;
+  propagateStatus.textContent = `Propagando a ${targets.length} clip(s)…`;
+  const params = clipStabParamsPanel.getParams();
+
+  let done = 0;
+  for (const targetPath of targets) {
+    const res = await fetch("/api/stabilize-draft", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ root: lastScan.root, path: targetPath, ...params }),
+    });
+    const data = await res.json();
+    if (!data.error) {
+      const clip = findClip(targetPath);
+      if (clip) clip.stabilize_draft = data.draft;
+      refreshRowStatus(targetPath);
+      done += 1;
+    }
+  }
+
+  propagateApplyBtn.disabled = false;
+  propagateStatus.textContent = `Ajuste propagado a ${done} de ${targets.length} clip(s).`;
 });

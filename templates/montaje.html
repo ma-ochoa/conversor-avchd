@@ -136,32 +136,10 @@
           <input id="stabilize-seek" type="range" min="0" max="1" step="0.001" value="0">
           <label class="canvas-toggle"><input type="checkbox" id="stabilize-preview-toggle" checked> con corrección</label>
         </div>
-
-        <div class="stab-mode-row">
-          <label><input type="radio" name="montaje-stab-mode" id="montaje-stab-mode-auto" value="auto" checked> Automático</label>
-          <label><input type="radio" name="montaje-stab-mode" id="montaje-stab-mode-custom" value="custom"> Personalizado</label>
-        </div>
-
-        <div id="montaje-stab-custom-panel" class="stab-custom-panel hidden">
-          <label>Sensibilidad al temblor: <span id="montaje-shakiness-value">5</span>/10
-            <input type="range" id="montaje-shakiness" min="1" max="10" step="1" value="5">
-          </label>
-          <p class="muted hint">Cambiar esto sí requiere volver a analizar.</p>
-          <label>Suavizado: <span id="montaje-smoothing-value">10</span>
-            <input type="range" id="montaje-smoothing" min="0" max="50" step="1" value="10">
-          </label>
-          <label>Zoom / recorte
-            <select id="montaje-zoom-mode">
-              <option value="auto_static">Automático — recorte fijo mínimo</option>
-              <option value="auto_dynamic">Automático dinámico</option>
-              <option value="manual">Manual — porcentaje fijo</option>
-            </select>
-          </label>
-          <label id="montaje-zoom-percent-row" class="hidden">Zoom manual: <span id="montaje-zoom-percent-value">10</span>%
-            <input type="range" id="montaje-zoom-percent" min="0" max="50" step="1" value="10">
-          </label>
-        </div>
       </div>
+
+      {% set prefix = "montaje-stab" %}
+      {% include "_stab_params_panel.html" %}
 
       <div class="modal-actions">
         <button id="stabilize-clear-btn">Quitar estabilización</button>
@@ -173,5 +151,6 @@
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='stabilize_preview.js') }}"></script>
+<script src="{{ url_for('static', filename='stab_params_panel.js') }}"></script>
 <script src="{{ url_for('static', filename='montaje.js') }}"></script>
 {% endblock %}

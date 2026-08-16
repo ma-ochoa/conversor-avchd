@@ -2,6 +2,7 @@
 cruzadas xfade/acrossfade, estabilización opcional) y renderiza el vídeo final en un
 único paso. Esto recodifica siempre."""
 
+import math
 import re
 import subprocess
 from pathlib import Path
@@ -52,14 +53,22 @@ def _stab_prefilter(root: Path, clip: dict, progress_cb=None) -> str:
     smoothing = int(stab.get("smoothing", 10))
     zoom_mode = stab.get("zoom_mode", "auto_static")
     zoom_percent = float(stab.get("zoom_percent", 0.0))
+    stepsize = int(stab.get("stepsize", 6))
+    mincontrast = float(stab.get("mincontrast", 0.25))
+    interpol = stab.get("interpol", "bilinear")
+    optalgo = stab.get("optalgo", "gauss")
+    maxshift = int(stab.get("maxshift", -1))
+    maxangle_deg = float(stab.get("maxangle", -1.0))
+    maxangle = -1 if maxangle_deg < 0 else math.radians(maxangle_deg)
 
-    analysis = ensure_analysis(root, source, shakiness, accuracy, progress_cb)
+    analysis = ensure_analysis(root, source, shakiness, accuracy, stepsize, mincontrast, progress_cb)
     trf_path = _esc_path(str(analysis["trf_path"]))
     zoom_args = _stab_zoom_args(zoom_mode, zoom_percent)
 
     return (
         f"yadif=mode=1:deint=interlaced,"
-        f"vidstabtransform=input={trf_path}:smoothing={smoothing}:{zoom_args}:interpol=bilinear,"
+        f"vidstabtransform=input={trf_path}:smoothing={smoothing}:{zoom_args}:"
+        f"interpol={interpol}:optalgo={optalgo}:maxshift={maxshift}:maxangle={maxangle},"
         "unsharp=5:5:0.8:3:3:0.4,"
     )
 

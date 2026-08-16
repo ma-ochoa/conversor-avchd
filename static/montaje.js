@@ -632,10 +632,6 @@ const stabilizePreviewToggle = document.getElementById("stabilize-preview-toggle
 const stabilizeClearBtn = document.getElementById("stabilize-clear-btn");
 const stabilizeSaveBtn = document.getElementById("stabilize-save-btn");
 
-const montajeStabCustomPanel = document.getElementById("montaje-stab-custom-panel");
-const montajeZoomModeSelect = document.getElementById("montaje-zoom-mode");
-const montajeZoomPercentRow = document.getElementById("montaje-zoom-percent-row");
-
 const stabilizePreview = createStabilizePreview({
   video: document.getElementById("stabilize-proxy-video"),
   canvas: document.getElementById("stabilize-canvas"),
@@ -644,65 +640,22 @@ const stabilizePreview = createStabilizePreview({
   toggle: stabilizePreviewToggle,
 });
 
+const stabParamsPanel = createStabParamsPanel("montaje-stab", {
+  onChange: (params) => stabilizePreview.recomputeAndRender(params),
+});
+
 let stabilizeEditingId = null;
-
-document.querySelectorAll('input[name="montaje-stab-mode"]').forEach((radio) => {
-  radio.addEventListener("change", () => {
-    montajeStabCustomPanel.classList.toggle("hidden", document.getElementById("montaje-stab-mode-auto").checked);
-    stabilizePreview.recomputeAndRender(montajeStabParams());
-  });
-});
-["montaje-shakiness", "montaje-smoothing", "montaje-zoom-percent"].forEach((id) => {
-  const input = document.getElementById(id);
-  const label = document.getElementById(`${id}-value`);
-  input.addEventListener("input", () => {
-    label.textContent = input.value;
-    if (id !== "montaje-shakiness") stabilizePreview.recomputeAndRender(montajeStabParams());
-  });
-});
-montajeZoomModeSelect.addEventListener("change", () => {
-  montajeZoomPercentRow.classList.toggle("hidden", montajeZoomModeSelect.value !== "manual");
-  stabilizePreview.recomputeAndRender(montajeStabParams());
-});
-
-function montajeStabParams() {
-  if (document.getElementById("montaje-stab-mode-auto").checked) {
-    return { shakiness: 5, accuracy: 15, smoothing: 10, zoom_mode: "auto_static", zoom_percent: 0 };
-  }
-  return {
-    shakiness: parseInt(document.getElementById("montaje-shakiness").value, 10),
-    accuracy: 15,
-    smoothing: parseInt(document.getElementById("montaje-smoothing").value, 10),
-    zoom_mode: montajeZoomModeSelect.value,
-    zoom_percent: parseFloat(document.getElementById("montaje-zoom-percent").value),
-  };
-}
 
 function openStabilizeModal(timelineId) {
   stabilizeEditingId = timelineId;
   const item = timeline.find((t) => t.id === timelineId);
-  const stab = item.stabilize;
 
   stabilizePreview.stop();
   stabilizePreviewWrap.classList.add("hidden");
   stabilizeAnalyzeStatus.textContent = "";
   stabilizeAnalyzeProgress.classList.add("hidden");
   stabilizeSaveBtn.disabled = true;
-
-  const isCustom = stab && (stab.zoom_mode !== "auto_static" || stab.smoothing !== 10 || stab.shakiness !== 5);
-  document.getElementById("montaje-stab-mode-auto").checked = !isCustom;
-  document.getElementById("montaje-stab-mode-custom").checked = !!isCustom;
-  montajeStabCustomPanel.classList.toggle("hidden", !isCustom);
-  if (stab) {
-    document.getElementById("montaje-shakiness").value = stab.shakiness;
-    document.getElementById("montaje-shakiness-value").textContent = stab.shakiness;
-    document.getElementById("montaje-smoothing").value = stab.smoothing;
-    document.getElementById("montaje-smoothing-value").textContent = stab.smoothing;
-    montajeZoomModeSelect.value = stab.zoom_mode;
-    document.getElementById("montaje-zoom-percent").value = stab.zoom_percent;
-    document.getElementById("montaje-zoom-percent-value").textContent = stab.zoom_percent;
-    montajeZoomPercentRow.classList.toggle("hidden", stab.zoom_mode !== "manual");
-  }
+  stabParamsPanel.setParams(item.stabilize);
 
   stabilizeModal.classList.remove("hidden");
 }
@@ -717,7 +670,7 @@ stabilizeModal.addEventListener("click", (e) => {
 
 stabilizeAnalyzeBtn.addEventListener("click", async () => {
   const item = timeline.find((t) => t.id === stabilizeEditingId);
-  const params = montajeStabParams();
+  const params = stabParamsPanel.getParams();
   stabilizeAnalyzeBtn.disabled = true;
   stabilizeAnalyzeStatus.textContent = "Analizando… (puede tardar, sobre todo la primera vez en 4K)";
   stabilizeAnalyzeProgress.classList.remove("hidden");
@@ -726,7 +679,10 @@ stabilizeAnalyzeBtn.addEventListener("click", async () => {
   const res = await fetch("/api/montaje/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ root, path: item.path, shakiness: params.shakiness, accuracy: params.accuracy }),
+    body: JSON.stringify({
+      root, path: item.path, shakiness: params.shakiness, accuracy: params.accuracy,
+      stepsize: params.stepsize, mincontrast: params.mincontrast,
+    }),
   });
   const data = await res.json();
   if (data.error) {
@@ -754,7 +710,7 @@ async function pollStabilizeAnalyze(jobId) {
     stabilizeAnalyzeBtn.disabled = false;
     stabilizeSaveBtn.disabled = false;
     stabilizePreviewWrap.classList.remove("hidden");
-    stabilizePreview.setupPreview(analysis).then(() => stabilizePreview.recomputeAndRender(montajeStabParams()));
+    stabilizePreview.setupPreview(analysis).then(() => stabilizePreview.recomputeAndRender(stabParamsPanel.getParams()));
     return;
   }
   if (job.status === "error") {
@@ -775,7 +731,7 @@ stabilizeClearBtn.addEventListener("click", () => {
 
 stabilizeSaveBtn.addEventListener("click", () => {
   const item = timeline.find((t) => t.id === stabilizeEditingId);
-  item.stabilize = montajeStabParams();
+  item.stabilize = stabParamsPanel.getParams();
   renderTimeline();
   stabilizePreview.stop();
   stabilizeModal.classList.add("hidden");

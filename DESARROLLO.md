@@ -11,12 +11,19 @@
 > cruzada entre Estabilización y Montaje sin recomprimir — (2) **despliegue con
 > Docker** — imagen + `docker-compose.yml` + publicación automática en GHCR por GitHub
 > Actions, enganchado al Watchtower ya compartido entre proyectos en este equipo — (3)
-> marcar/desmarcar todo y prefijo de nombre en Conversión — y (4) **carpeta de trabajo
+> marcar/desmarcar todo y prefijo de nombre en Conversión — (4) **carpeta de trabajo
 > configurable** (`⚙️ Ajustes`, `converter/config.py`) — una única ubicación opcional,
-> global a toda la app, para todo lo que se genera (conversion/, estabilizado/,
-> recompresion/, montaje/, cachés), en vez de repartido dentro de cada carpeta de
-> origen. Repo: https://github.com/ma-ochoa/conversor-avchd — rama `main`. Comprueba
-> `git log --oneline -5` y `git status` al empezar para confirmar que sigue así.
+> global a toda la app, para lo que generan Conversión/Recompresión/Montaje, en vez de
+> repartido dentro de cada carpeta de origen — y (5) **rediseño del almacenamiento de
+> estabilización**: cada vídeo guarda su análisis/ajustes/log junto a sí mismo
+> (`stabilization_data/`, ver más abajo) en vez de en una caché centralizada, la
+> salida se llama `<nombre>_stabilized.mp4` junto al original, y el panel de ajustes
+> (básicos + un grupo "Avanzado" con los parámetros de vid.stab menos habituales) es
+> un componente compartido con controles siempre visibles pero bloqueados en modo
+> automático. Repo: https://github.com/ma-ochoa/conversor-avchd — rama `main`.
+> Comprueba `git log --oneline -5` y `git status` al empezar para confirmar que sigue
+> así — y ten en cuenta que puede haber cambios de otra sesión aún sin commitear
+> conviviendo en el árbol de trabajo (p. ej. ficheros nuevos sin seguimiento).
 
 ## Qué es esto
 
@@ -87,6 +94,8 @@ templates/recompresion.html     Página de Recompresión
 templates/estabilizacion.html   Página de Estabilización
 templates/montaje.html          Página de Montaje (editor)
 templates/ajustes.html          Página de Ajustes (carpeta de trabajo global)
+templates/_stab_params_panel.html  ⭐ Panel de ajustes de estabilización compartido —
+                                 {% include %} parametrizado por prefix, ver detalle abajo
 
 static/shell.js                 Recuerda la carpeta de proyecto entre módulos (localStorage)
 static/conversion.js            JS de Conversión (checkboxes "marcar todo", prefijo de nombre)
@@ -95,10 +104,13 @@ static/ajustes.js               JS de Ajustes — usa ids "wd-*" para su selecto
                                  NO "path-input", porque shell.js rellena cualquier
                                  #path-input con la última carpeta de PROYECTO recordada
                                  (un concepto distinto de la carpeta de trabajo global)
-static/estabilizacion.js        JS de Estabilización (tabla + modal "Analizar y ajustar")
+static/estabilizacion.js        JS de Estabilización (tabla + modal "Analizar y ajustar" +
+                                 modal "Propagar a otros clips")
 static/stabilize_preview.js     ⭐ Preview de estabilización en canvas — compartido entre
                                  Estabilización y Montaje (ver detalle abajo)
-static/montaje.js               JS del editor — usa stabilize_preview.js para su propio modal
+static/stab_params_panel.js     ⭐ Lógica del panel de ajustes compartido — ver detalle abajo
+static/montaje.js               JS del editor — usa stabilize_preview.js/stab_params_panel.js
+                                 para su propio modal
 static/style.css                Estilos compartidos + layout de la barra lateral
 static/montaje.css              Estilos del editor, reutilizados también por Estabilización
                                  (modal/canvas) — cargado desde ambas plantillas
@@ -111,17 +123,25 @@ converter/
   manifest.py                   .manifest.json genérico (qué ya se procesó, por carpeta) —
                                  resuelve la carpeta de trabajo internamente (ver abajo)
   scanner.py                    Escaneo recursivo: vídeos/fotos/otros formatos, marca
-                                 has_analysis/stabilize_draft por clip de vídeo
+                                 already_stabilized/has_analysis/stabilize_draft por clip
+                                 comprobando directamente junto a cada vídeo (ya no un
+                                 manifiesto centralizado)
   jobs.py                       Job de "Convertir" (remuxeo + fotos)
-  fonts.py                      Fuentes del sistema macOS para drawtext
+  fonts.py                      Fuentes del sistema (macOS y Linux/Docker) para drawtext
   thumbnails.py                 Miniaturas .jpg cacheadas (carpeta .miniaturas/)
   project.py                    Guardar/cargar proyectos de montaje (JSON)
-  montaje_clips.py              Lista de clips disponibles para montar/recomprimir,
-                                 con el borrador de estabilización enlazado por origen
+  montaje_clips.py              Lista de clips disponibles para montar/recomprimir:
+                                 convertidos (conversion/, con el borrador enlazado por
+                                 origen) + estabilizados (recorre el árbol buscando
+                                 *_stabilized.mp4, sin borrador adjunto)
 
   stabilize.py                  ⭐ Núcleo de estabilización — ver detalle abajo
   stabilize_jobs.py             Job de "Estabilizar" (independiente) — usa el borrador
-                                 guardado del clip si existe, si no los parámetros globales
+                                 guardado del clip si existe, si no los parámetros
+                                 globales; escribe <nombre>_stabilized.mp4 junto al original
+  migrate_stabilization.py      Script de migración única del esquema antiguo (estabilizado/
+                                 + .vidstab_cache/) al nuevo (co-localizado) — se ejecuta a
+                                 mano, no es parte de la app en marcha
   proxy.py                      Genera/cachea proxy ligero (.proxies/) para el canvas
   analyze_jobs.py               Job de "Analizar" (solo trayectoria) — genérico, lo usan
                                  tanto Montaje como el modal de Estabilización
@@ -134,40 +154,77 @@ converter/
 
 ## `converter/stabilize.py` — cómo funciona de verdad
 
-Es el módulo más importante y el que más ha costado afinar. Funciones clave:
+Es el módulo más importante y el que más ha costado afinar.
 
-- **`ensure_analysis(root, source, shakiness, accuracy)`**: pasada 1 de `vid.stab`
-  (`vidstabdetect`). Cachea el `.trf` binario en `<root>/.vidstab_cache/<hash>.trf`,
-  clave = `sha1(f"{source}|{shakiness}|{accuracy}")`, invalidada si cambia el tamaño
-  del fichero origen. **Esto es lo lento** (en 4K, minutos u horas según duración —
-  ver "Hallazgos" abajo). Devuelve también estadísticas (fotogramas de bajo contraste,
-  confianza) parseadas del log de `vidstabdetect`, cacheadas junto al `.trf` en un
-  `.json` hermano.
+**Almacenamiento: junto al vídeo, no centralizado.** Cada clip guarda su propia
+carpeta `stabilization_data/` como hermana de sí mismo (o replicada con la misma ruta
+relativa dentro de la carpeta de trabajo, si hay una configurada — ver
+`_relocated_dir()`, que es la única función que decide esto). Dentro, con el nombre
+del vídeo como prefijo:
+
+- `<nombre>.trf` — el análisis binario de `vidstabdetect` (pase 1).
+- `<nombre>_analisis.json` — metadatos del análisis: `source_size` (para invalidar la
+  caché si el origen cambia), `shakiness`/`accuracy`/`stepsize`/`mincontrast` (los
+  parámetros de detección con los que se generó — si alguno no coincide con lo que se
+  pide, se repite el análisis), `stats` (fotogramas de bajo contraste, confianza), y
+  opcionalmente `preview` (trayectoria fotograma a fotograma + fps/ancho/alto/duración,
+  para la vista previa en canvas — se añade la primera vez que se pide, no hace falta
+  volver a analizar para tenerla).
+- `<nombre>_ajustes.json` — el borrador de ajustes guardado (ver más abajo).
+- `<nombre>_log.json` — lista cronológica de acciones (`analizado`, `ajuste_guardado`,
+  `ajuste_descartado`, `estabilizado`, `migrado`), cada una con marca de tiempo y los
+  parámetros/resultado relevantes. Es un log de auditoría, no algo que la UI muestre
+  todavía.
+
+El vídeo ya estabilizado se guarda como `<nombre>_stabilized.mp4`, también junto al
+original (o replicado en la carpeta de trabajo).
+
+Funciones clave:
+
+- **`ensure_analysis(root, source, shakiness, accuracy, stepsize, mincontrast)`**:
+  pasada 1 de `vid.stab` (`vidstabdetect`). **Esto es lo lento** (en 4K, minutos u
+  horas según duración — ver "Hallazgos" abajo). Reutiliza el `.trf` si ya existe uno
+  para el `source_size` y estos 4 parámetros exactos; si no, lo regenera (sobrescribe
+  — solo se guarda "el" análisis vigente de cada clip, no uno por combinación de
+  parámetros como en el diseño anterior).
 - **`stabilize_clip(source, dest, root, ..., shakiness, accuracy, smoothing, zoom_mode,
-  zoom_percent)`**: pasada 2 (`vidstabtransform`) + codificación real a `dest`. Llama a
-  `ensure_analysis` primero (con caché). Solo esta pasada 2 depende de
-  `smoothing`/`zoom_mode`/`zoom_percent` — por eso cambiar esos parámetros y
-  reprocesar es rápido (reutiliza el `.trf`), pero cambiar `shakiness`/`accuracy`
-  invalida la caché y repite la pasada 1.
-- **`get_preview_analysis(root, source, shakiness, accuracy)`**: para la vista previa
-  del montaje. Llama a `ensure_analysis` (mismo caché, compartido con el botón
-  "Estabilizar" independiente — analizar una vez sirve para ambos flujos) y además
-  ejecuta `vidstabtransform` con `debug=1` para volcar la trayectoria de cámara
-  fotograma a fotograma **sin codificar vídeo** (mucho más rápido que una pasada 2
-  completa). Devuelve `{path: [{dx,dy,angle}, ...], fps, width, height, duration,
-  stats}`. Esto también se cachea (`.path.json` hermano del `.trf`).
+  zoom_percent, stepsize, mincontrast, interpol, optalgo, maxshift, maxangle)`**: pasada
+  2 (`vidstabtransform`) + codificación real a `dest` (el destino lo decide quien
+  llama, no esta función). Llama a `ensure_analysis` primero (con caché). Solo
+  `shakiness`/`accuracy`/`stepsize`/`mincontrast` invalidan la caché de análisis; el
+  resto de parámetros son solo de la pasada 2, reprocesar cambiándolos es rápido.
+- **`get_preview_analysis(...)`**: para la vista previa en canvas. Llama a
+  `ensure_analysis` (mismo caché) y ejecuta `vidstabtransform` con `debug=1` para
+  volcar la trayectoria de cámara fotograma a fotograma **sin codificar vídeo**. El
+  resultado se guarda bajo la clave `"preview"` dentro del mismo
+  `<nombre>_analisis.json` (no en un fichero aparte).
 - `zoom_mode`: `"auto_static"` (`optzoom=1`, el de siempre), `"auto_dynamic"`
   (`optzoom=2`), `"manual"` (`optzoom=0:zoom=X`, control tipo Pinnacle).
 - El filtro siempre empieza con `yadif=mode=1:deint=interlaced` — desentrelaza
   **solo si el fotograma viene marcado como entrelazado** (AVCHD 1080i), dejando
-  intacto el vídeo progresivo (4K/MP4 de cámaras modernas). Así se pueden mezclar
-  fuentes AVCHD y 4K en el mismo montaje sin lógica condicional por extensión.
-- **`has_cached_analysis(root, source, shakiness, accuracy)`**: comprueba si el `.trf`
-  de esos parámetros ya existe y es válido (tamaño de origen coincide), sin ejecutar
-  ffmpeg. La usa `scanner.py` en cada clip del escaneo — por eso el escaneo no se
-  vuelve más lento aunque haya cientos de clips.
-- **`save_stabilize_draft` / `load_stabilize_draft` / `discard_stabilize_draft`**:
-  el "borrador" de ajustes por clip — ver la sección siguiente.
+  intacto el vídeo progresivo (4K/MP4 de cámaras modernas).
+- **`has_cached_analysis(root, source, shakiness, accuracy, stepsize, mincontrast)`**:
+  comprueba si el `.trf` de esos 4 parámetros ya existe y es válido, sin ejecutar
+  ffmpeg. La usa `scanner.py` en cada clip del escaneo.
+- **`save_stabilize_draft` / `load_stabilize_draft` / `discard_stabilize_draft`**: el
+  "borrador" de ajustes por clip — ahora un fichero JSON propio
+  (`<nombre>_ajustes.json`), ya no una entrada dentro de un manifiesto compartido.
+- **`DEFAULT_PARAMS`** (dict) y **`is_custom_mode(params)`**: los 11 parámetros y sus
+  valores de fábrica en un único sitio — los usan tanto el backend (para decidir si
+  el resultado de `stabilize_clip` fue "automático" o "personalizado") como, en
+  espíritu, el frontend (`STAB_DEFAULT_PARAMS`/`stabIsCustom` en
+  `static/stab_params_panel.js`, duplicado ahí porque el JS no puede importar Python
+  — si se cambia un valor por defecto hay que tocar los dos sitios).
+- **`converter/migrate_stabilization.py`**: script de migración (no una ruta Flask;
+  se ejecuta a mano, `python3 -m converter.migrate_stabilization "<carpeta>"`) del
+  esquema anterior (`estabilizado/` centralizado + `.vidstab_cache/` por hash) a este.
+  Mueve cada vídeo ya estabilizado a su nueva ubicación, migra el borrador si existía,
+  y copia el `.trf` antiguo *solo* si hay uno que corresponda exactamente al
+  shakiness/accuracy del borrador (o 5/15 por defecto) — si no, no se arrastra (se
+  puede volver a analizar). Seguro de ejecutar más de una vez. Ejecutado de verdad en
+  esta sesión contra los datos reales del proyecto: 8 clips migrados, 1 con caché de
+  análisis migrada (los otros 7 no tenían ya un `.trf` que coincidiera, así que
+  tocará re-analizarlos si se quieren volver a ajustar).
 
 ## `converter/timeline_export.py` — el montaje completo en una pasada
 
@@ -226,44 +283,85 @@ Flujo completo:
    zoom_percent}` y, en la exportación/estabilización real, el mismo cálculo real de
    `vid.stab` (no la aproximación de JS).
 
+## Panel de ajustes compartido (`templates/_stab_params_panel.html` + `static/stab_params_panel.js`)
+
+Petición del usuario: explicar en la propia UI qué hace cada ajuste, que los
+controles estén **siempre visibles** (bloqueados en gris en modo automático, en vez de
+ocultos) y se desbloqueen al pasar a "Personalizado", y exponer un grupo "Avanzado"
+con los parámetros de vid.stab que hasta ahora estaban ocultos por completo
+(`accuracy`, `stepsize`, `mincontrast`, `interpol`, `optalgo`, `maxshift`, `maxangle`)
+— cada uno con su explicación.
+
+Se usa en tres sitios (panel masivo de Estabilización, modal por clip de
+Estabilización, modal de Montaje), así que en vez de triplicar el HTML/JS a mano:
+
+- **`templates/_stab_params_panel.html`**: un `{% include %}` de Jinja parametrizado
+  por `{% set prefix = "..." %}` antes de incluirlo — cada sitio usa un prefijo
+  distinto (`bulk-stab`, `clip-stab`, `montaje-stab`) para que los ids no choquen al
+  convivir varios en la misma página (el modal de Montaje y el panel masivo de
+  Estabilización, aunque en páginas distintas, comparten el mismo patrón).
+- **`static/stab_params_panel.js::createStabParamsPanel(prefix, {onChange})`**: dado
+  el mismo prefijo, engancha todos los controles (bloqueo/desbloqueo con el radio
+  automático/personalizado, actualización de las etiquetas de valor, mostrar/ocultar
+  la fila de zoom manual) y devuelve `{getParams(), setParams(draft), element}`.
+  `setParams(null)` deja el panel en modo automático con los valores de fábrica.
+  `STAB_DEFAULT_PARAMS`/`stabIsCustom()` en este fichero duplican
+  `DEFAULT_PARAMS`/`is_custom_mode()` de `converter/stabilize.py` — el JS no puede
+  importar Python, así que si se cambia un valor por defecto hay que tocar los dos
+  sitios.
+- Los tres sitios que lo usan (`static/estabilizacion.js` para el panel masivo y el
+  modal por clip, `static/montaje.js` para su modal) ya no tienen su propia lógica de
+  mostrar/ocultar ni de leer cada `<input>` a mano — solo llaman a
+  `createStabParamsPanel(...)`, y donde antes había un `montajeStabParams()`/
+  `clipStabParams()` a medida ahora se llama a `panel.getParams()`.
+
 ## Historial de ajustes de estabilización (borrador por clip, entre módulos)
 
 Petición del usuario: poder analizar/ajustar un clip en Estabilización, guardar o
 descartar esos ajustes, y que el resto de la app (el escaneo, Montaje) los vea sin
 tener que rebuscar en carpetas ni recomprimir nada. Piezas:
 
-- **Almacén** (`converter/stabilize.py::save_stabilize_draft` /
-  `load_stabilize_draft` / `discard_stabilize_draft`): reutiliza
-  `manifest.load_manifest`/`record_entry`/`remove_entry` con
-  `subfolder=".vidstab_cache"` → escribe en `<root>/.vidstab_cache/.manifest.json`,
-  clave = ruta absoluta del clip **original** (no del `.trf`, que vive en ficheros
-  hermanos con nombre-hash en esa misma carpeta — no colisionan). Es independiente de
-  si el clip se ha llegado a analizar o renderizar: solo guarda qué parámetros eligió
-  el usuario la última vez, para poder probarlos/guardarlos/descartarlos.
+- **Almacén**: un fichero JSON propio por clip
+  (`stabilization_data/<nombre>_ajustes.json`, junto al vídeo — ver la sección de
+  `stabilize.py` más arriba), no una entrada dentro de un manifiesto compartido como
+  en el diseño original de esta función. Independiente de si el clip se ha llegado a
+  analizar o renderizar: solo guarda qué parámetros eligió el usuario la última vez.
 - **Rutas**: `POST /api/stabilize-draft` (guarda) y `DELETE /api/stabilize-draft`
   (descarta), body `{root, path, shakiness?, accuracy?, smoothing?, zoom_mode?,
-  zoom_percent?}`.
+  zoom_percent?, stepsize?, mincontrast?, interpol?, optalgo?, maxshift?, maxangle?}`.
 - **Escaneo** (`scanner.py`): cada clip de vídeo lleva `has_analysis` (¿existe un
-  `.trf` válido para el shakiness/accuracy del borrador, o los de por defecto si no
-  hay borrador?) y `stabilize_draft` (el borrador tal cual, o `null`). La tabla de
+  `.trf` válido para los parámetros de detección del borrador, o los de por defecto si
+  no hay borrador?) y `stabilize_draft` (el borrador tal cual, o `null`). La tabla de
   Estabilización pinta con esto el estado: `—` / `🔍 analizado` / `🩹 ajustado`.
 - **Página de Estabilización** (`estabilizacion.js`): botón "🔍 Analizar y ajustar"
-  por fila abre el modal compartido, precargado con el borrador si existe. "Guardar
-  ajuste"/"Descartar ajuste guardado" llaman a las rutas de arriba y actualizan la
-  fila sin recargar toda la tabla. El botón masivo "Estabilizar marcados" sigue
-  mandando unos parámetros globales al job, pero **`stabilize_jobs.py` ahora
-  comprueba el borrador de cada clip y lo usa en vez de esos parámetros globales si
-  existe** — sin ningún cambio en el frontend, es puramente un `load_stabilize_draft`
-  antes de llamar a `stabilize_clip` en `_run_job`.
+  por fila abre el modal compartido, precargado con el borrador si existe — y si
+  `has_analysis` ya es cierto, dispara el análisis (que será casi instantáneo, cache
+  hit) automáticamente, sin esperar a que el usuario pulse "Analizar clip" (petición
+  explícita del usuario: "si un vídeo se ha analizado previamente, al pinchar en
+  analizar y ajustar mostrará la ventana de edición de ajustes"). "Guardar ajuste"/
+  "Descartar ajuste guardado" llaman a las rutas de arriba y actualizan la fila sin
+  recargar toda la tabla. El botón masivo "Estabilizar marcados" sigue mandando unos
+  parámetros globales al job, pero **`stabilize_jobs.py` comprueba el borrador de cada
+  clip y lo usa en vez de esos parámetros globales si existe** — sin ningún cambio en
+  el frontend, es puramente un `load_stabilize_draft` antes de llamar a
+  `stabilize_clip` en `_run_job`.
+- **Propagar a otros clips**: botón "Propagar a otros clips…" en el modal por clip —
+  abre un segundo modal listando los demás clips de la **misma carpeta** (mismo
+  directorio padre en la ruta relativa del escaneo), y copia el ajuste actual del
+  panel a cada uno marcado, llamando a `POST /api/stabilize-draft` una vez por clip
+  destino desde el frontend (`static/estabilizacion.js` — sin ninguna ruta nueva en
+  el backend).
 - **Montaje** (`montaje_clips.py` + `montaje.js`): `montaje_clips.py` invierte el
-  `.manifest.json` de `conversion/`/`estabilizado/` (origen → nombre de salida) para,
-  dado un fichero ya convertido/estabilizado, encontrar su clip original y adjuntarle
-  `stabilize_draft` si lo tiene. La cuadrícula de clips pinta una insignia "🩹 ajuste
-  de estabilización guardado" y, al arrastrar el clip a la línea de tiempo,
-  `addClipToTimeline` copia ese borrador a `item.stabilize` automáticamente.
+  manifiesto de `conversion/` (origen → nombre de salida) para, dado un fichero ya
+  convertido, encontrar su clip original y adjuntarle `stabilize_draft` si lo tiene
+  (los clips ya estabilizados se descubren aparte, recorriendo el árbol en busca de
+  `*_stabilized.mp4` — ver la sección de `stabilize.py` — y nunca llevan borrador
+  adjunto). La cuadrícula de clips pinta una insignia "🩹 ajuste de estabilización
+  guardado" y, al arrastrar el clip a la línea de tiempo, `addClipToTimeline` copia
+  ese borrador a `item.stabilize` automáticamente.
   **Importante — guarda de doble estabilización**: esto solo pasa si
   `clip.source === "convertido"` (el clip viene de `conversion/`, aún sin
-  estabilizar). Un clip que ya viene de `estabilizado/` es un vídeo YA procesado con
+  estabilizar). Un clip que ya viene de "estabilizado" es un vídeo YA procesado con
   `vid.stab`; si se le aplicase además el borrador como `item.stabilize`, la
   exportación final le metería `vidstabtransform` una segunda vez encima de un vídeo
   que ya no tiembla — con resultados impredecibles. La insignia y la herencia se
@@ -273,9 +371,10 @@ tener que rebuscar en carpetas ni recomprimir nada. Piezas:
 ## Carpeta de trabajo configurable (`converter/config.py`)
 
 Petición del usuario: poder elegir dónde se guarda todo lo que la app genera —
-`conversion/`, `estabilizado/`, `recompresion/`, `montaje/` (proyectos y
-exportaciones), y las cachés (`.vidstab_cache/`, `.proxies/`, `.miniaturas/`) — en vez
-de que quede siempre repartido dentro de cada carpeta de origen que se escanea.
+`conversion/`, `recompresion/`, `montaje/` (proyectos y exportaciones), `.proxies/`,
+`.miniaturas/`, y (desde esta sesión) también `stabilization_data/`/
+`<nombre>_stabilized.mp4` — en vez de que quede siempre repartido dentro de cada
+carpeta de origen que se escanea.
 
 - **Config global, no por proyecto**: `converter/config.py` guarda un único
   `working_dir` opcional en `~/.conversor-avchd/config.json` (fuera de cualquier
@@ -294,27 +393,28 @@ de que quede siempre repartido dentro de cada carpeta de origen que se escanea.
   sin tener que rastrear con precisión quirúrgica cuál de esos sitios es "el primero"
   en tocar cada `root` — llamarla de más nunca rompe nada.
 - **Dónde se aplicó** (todo lo que antes hacía `root / NOMBRE_SUBCARPETA` para
-  *generar/cachear* algo, no para *leer el origen*):
-  `manifest.py::_manifest_path` (con esto solo ya cubre `load_manifest`/`record_entry`/
-  `remove_entry` en todos sus llamantes: scanner, jobs, stabilize_jobs,
-  recompress_jobs, montaje_clips, los borradores de stabilize.py), `stabilize.py::
-  _cache_paths` (cubre análisis, preview y borradores), `thumbnails.py::
-  _thumb_cache_path`, `proxy.py::_proxy_path`, `project.py::_projects_dir` +
-  `exports_dir` (nueva función, la usa `timeline_jobs.py` en vez de construir la ruta
-  a mano), y los `output_dir`/`stabilize_output_dir` calculados directamente en
-  `scanner.py`, `jobs.py`, `stabilize_jobs.py`, `recompress_jobs.py`,
-  `montaje_clips.py`.
+  *generar/cachear* algo, no para *leer el origen*): `manifest.py::_manifest_path`
+  (cubre `load_manifest`/`record_entry`/`remove_entry` en todos sus llamantes:
+  scanner, jobs, recompress_jobs, montaje_clips), `thumbnails.py::_thumb_cache_path`,
+  `proxy.py::_proxy_path`, `project.py::_projects_dir` + `exports_dir` (nueva
+  función, la usa `timeline_jobs.py` en vez de construir la ruta a mano), y los
+  `output_dir` calculados directamente en `scanner.py`, `jobs.py`,
+  `recompress_jobs.py`. **Estabilización es distinta**: no llama a
+  `resolve_output_base()` en cada sitio, sino que `stabilize.py::_relocated_dir(root,
+  source_dir)` la llama una vez y decide entre "junto al vídeo" (si no hay carpeta de
+  trabajo) o "misma ruta relativa dentro de la carpeta de trabajo" (si la hay) — ver
+  la sección de `stabilize.py` más arriba.
 - **Qué NO cambia**: el `root`/carpeta de origen que se escanea sigue siendo
   exactamente el mismo concepto de siempre (dónde están los `.MTS`/`.mp4` originales) —
   eso nunca se resuelve contra la carpeta de trabajo, solo lo que se *genera* a partir
   de ahí. Por eso `file_path.relative_to(root_path)` en `scanner.py`, o el campo
   `"root"` que se guarda dentro de un proyecto de montaje (metadato sin uso real hoy en
   el frontend), siguen usando el `root` sin resolver.
-- **Sin migración de datos**: cambiar la carpeta de trabajo no mueve ni borra nada de
-  lo ya generado en la ubicación anterior — a propósito, para no arriesgar borrar
-  contenido del usuario. Simplemente, a partir de ese momento, las operaciones nuevas
-  (y las comprobaciones de "¿ya está convertido/estabilizado?") miran en la carpeta de
-  trabajo actual, no en la anterior.
+- **Migración de datos ya generados con el esquema anterior**: a diferencia de
+  conversión/recompresión/montaje (donde cambiar la carpeta de trabajo simplemente no
+  toca lo ya generado en la ubicación anterior), para estabilización el usuario pidió
+  migrar automáticamente lo que ya hubiera — ver `converter/migrate_stabilization.py`
+  en la sección de `stabilize.py` más arriba.
 - **UI**: página nueva `⚙️ Ajustes` (`templates/ajustes.html` + `static/ajustes.js`),
   con su propio selector de carpeta usando ids `wd-path-input`/`wd-go-btn`/etc en vez
   de `path-input` — `shell.js` rellena *cualquier* `#path-input` que encuentre en el
@@ -402,13 +502,20 @@ regenerable:
 | Carpeta | Contenido | Módulo |
 |---|---|---|
 | `conversion/` | Vídeos/fotos remuxeados | `jobs.py` |
-| `estabilizado/` | Vídeos estabilizados (botón independiente) | `stabilize_jobs.py` |
 | `recompresion/` | Vídeos recomprimidos (formato no soportado o reducción de tamaño) | `recompress_jobs.py` |
 | `montaje/proyectos/*.json` | Proyectos de montaje guardados | `project.py` |
 | `montaje/*_final.mp4` | Exportaciones finales del montaje | `timeline_jobs.py` |
 | `.miniaturas/` | Miniaturas .jpg cacheadas | `thumbnails.py` |
-| `.vidstab_cache/` | `.trf` + `.json` (stats) + `.path.json` (trayectoria) por clip, más `.manifest.json` (borrador de ajustes por clip, ver más arriba) | `stabilize.py` |
 | `.proxies/` | Proxies ligeros (640px) para el canvas | `proxy.py` |
+
+Estas, en cambio, viven **junto a cada vídeo** (o replicadas con la misma ruta
+relativa dentro de la carpeta de trabajo — ver `stabilize.py::_relocated_dir`), no
+centralizadas bajo el root/carpeta de trabajo como las de arriba:
+
+| Ubicación | Contenido | Módulo |
+|---|---|---|
+| `<carpeta del vídeo>/stabilization_data/` | `<nombre>.trf` (análisis), `<nombre>_analisis.json` (stats + trayectoria de preview), `<nombre>_ajustes.json` (borrador), `<nombre>_log.json` (histórico de acciones) — por vídeo | `stabilize.py` |
+| `<carpeta del vídeo>/<nombre>_stabilized.mp4` | El vídeo ya estabilizado | `stabilize_jobs.py` |
 
 Ninguna de estas carpetas tiene límite de tamaño ni expiración — si en el futuro se
 usa la app con muchos clips durante mucho tiempo, podría valer la pena añadir una
@@ -575,9 +682,9 @@ detectadas vía `/api/montaje/fonts`.
    - `private/AVCHD/BDMV/STREAM/*.MTS` — clips AVCHD 1080i reales (Sony ILCE-6400).
    - `Mago de Oz/private/M4ROOT/CLIP/*.MP4` — clips 4K reales (mismo tipo de cámara).
    - `Mago de Oz/DCIM/` — vídeos/fotos de otra cámara + fotos sueltas.
-   - Ya hay contenido convertido/estabilizado de sesiones anteriores en
-     `private/conversion/`, `private/estabilizado/`, etc. — reutilizable para pruebas
-     rápidas sin esperar a una conversión/estabilización nueva.
+   - Ya hay clips estabilizados de sesiones anteriores junto a sus originales en
+     `private/AVCHD/BDMV/STREAM/*_stabilized.mp4` (migrados en esta sesión al esquema
+     nuevo) — reutilizable para pruebas rápidas sin esperar a una estabilización nueva.
 3. Verificar siempre **a través de la app real** (clics/fetch en el navegador o
    `curl` a los endpoints), no solo llamando a las funciones Python directamente —
    así se detectó el bug del decorador roto.
@@ -589,8 +696,8 @@ detectadas vía `/api/montaje/fonts`.
   no maneje igual de bien que H.264/MP4.
 - No hay suite de tests automatizados — todo verificado manualmente/con scripts ad
   hoc contra clips reales durante el desarrollo.
-- No hay purga/expiración de las carpetas de caché (`.vidstab_cache/`, `.proxies/`,
-  `.miniaturas/`) — crecen sin límite.
+- No hay purga/expiración de las carpetas de caché (`stabilization_data/`,
+  `.proxies/`, `.miniaturas/`) — crecen sin límite.
 - El zoom automático de la vista previa en canvas es una aproximación (ver
   "Hallazgos" #2) — si en algún momento se nota muy desviado del resultado real,
-  revisar `autoZoomPercent()` en `static/montaje.js`.
+  revisar `autoZoomPercent()` en `static/stabilize_preview.js`.

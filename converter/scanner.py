@@ -6,7 +6,12 @@ from pathlib import Path
 from .config import resolve_output_base
 from .metadata import get_capture_datetime
 from .manifest import load_manifest
-from .stabilize import CACHE_DIR_NAME as STABILIZE_CACHE_DIR_NAME, has_cached_analysis
+from .stabilize import (
+    STABILIZATION_DATA_DIR,
+    has_cached_analysis,
+    load_stabilize_draft,
+    stabilized_output_path,
+)
 
 AVCHD_EXTS = {".mts", ".m2ts"}
 MP4_FAMILY_EXTS = {".mp4", ".mov", ".m4v"}
@@ -15,17 +20,22 @@ PHOTO_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff"}
 OTHER_VIDEO_EXTS = {".avi", ".mkv", ".wmv", ".3gp"}
 
 OUTPUT_DIR_NAME = "conversion"
+# Nombre histórico de la carpeta de salida de estabilización (antes de pasar a guardar
+# cada vídeo estabilizado junto a su original) — se sigue excluyendo del escaneo por si
+# queda alguna carpeta sin migrar.
 STABILIZE_DIR_NAME = "estabilizado"
+
+_EXCLUDED_DIRS = (OUTPUT_DIR_NAME, STABILIZE_DIR_NAME, STABILIZATION_DATA_DIR)
 
 
 def _iter_files(root: Path):
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = [
             d for d in dirnames
-            if not d.startswith(".") and d not in (OUTPUT_DIR_NAME, STABILIZE_DIR_NAME)
+            if not d.startswith(".") and d not in _EXCLUDED_DIRS
         ]
         for name in filenames:
-            if name.startswith("."):
+            if name.startswith(".") or name.endswith("_stabilized.mp4"):
                 continue
             yield Path(dirpath) / name
 
@@ -52,8 +62,6 @@ def scan_folder(root: str) -> dict:
 
     output_base = resolve_output_base(root_path)
     manifest = load_manifest(root_path)
-    stabilize_manifest = load_manifest(root_path, STABILIZE_DIR_NAME)
-    stabilize_drafts = load_manifest(root_path, STABILIZE_CACHE_DIR_NAME)
 
     avchd_clips = []
     photos = []
@@ -69,12 +77,14 @@ def scan_folder(root: str) -> dict:
         if ext in VIDEO_EXTS:
             dt, source = get_capture_datetime(file_path, is_video=True)
             conv = _processed_entry(manifest, OUTPUT_DIR_NAME, output_base, file_path, size)
-            stab = _processed_entry(stabilize_manifest, STABILIZE_DIR_NAME, output_base, file_path, size)
-            draft = stabilize_drafts.get(str(file_path))
+            draft = load_stabilize_draft(root_path, file_path)
+            stabilized_path = stabilized_output_path(root_path, file_path)
             has_analysis = has_cached_analysis(
                 root_path, file_path,
                 draft.get("shakiness", 5) if draft else 5,
                 draft.get("accuracy", 15) if draft else 15,
+                draft.get("stepsize", 6) if draft else 6,
+                draft.get("mincontrast", 0.25) if draft else 0.25,
             )
             avchd_clips.append(
                 {
@@ -86,9 +96,8 @@ def scan_folder(root: str) -> dict:
                     "format": ext.lstrip("."),
                     "already_converted": conv["done"],
                     "output_name": conv["output_name"],
-                    "already_stabilized": stab["done"],
-                    "stabilize_output_name": stab["output_name"],
-                    "stabilize_stats": stab["stats"],
+                    "already_stabilized": stabilized_path.exists(),
+                    "stabilize_output_name": stabilized_path.name if stabilized_path.exists() else None,
                     "has_analysis": has_analysis,
                     "stabilize_draft": draft,
                 }
@@ -123,7 +132,6 @@ def scan_folder(root: str) -> dict:
     return {
         "root": str(root_path),
         "output_dir": str(output_base / OUTPUT_DIR_NAME),
-        "stabilize_output_dir": str(output_base / STABILIZE_DIR_NAME),
         "avchd_clips": avchd_clips,
         "photos": photos,
         "other_videos": other_videos,

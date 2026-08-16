@@ -95,9 +95,9 @@ docker compose up -d --build
 Abre http://localhost:5050. La carpeta indicada en `MEDIA_DIR` queda montada dentro
 del contenedor en `/data` — es la carpeta de origen que verás por defecto en cada
 página, y desde ahí puedes navegar a cualquier subcarpeta. Todo lo que la app genera
-(`conversion/`, `estabilizado/`, `.vidstab_cache/`, etc.) se escribe dentro de esa
-misma carpeta montada, así que queda en tu Mac igual que con la instalación nativa —
-nada se pierde si el contenedor se reinicia.
+(`conversion/`, los vídeos `_stabilized.mp4`, etc.) se escribe dentro de esa misma
+carpeta montada, así que queda en tu Mac igual que con la instalación nativa — nada se
+pierde si el contenedor se reinicia.
 
 **Diferencias frente a la instalación nativa**:
 
@@ -180,9 +180,10 @@ renombrado por fecha que el resto de la app, y muestra cuánto se ha reducido el
 ## Estabilización
 
 En la tabla de vídeos hay una columna **"Estabilizar"** — marca los clips con temblor
-de cámara y pulsa **Estabilizar marcados**. El resultado se guarda en una carpeta
-`estabilizado/` (independiente de `conversion/`), y muestra estadísticas de cuánto ha
-tenido que corregir:
+de cámara y pulsa **Estabilizar marcados**. El resultado se guarda **junto al vídeo
+original**, como `<nombre>_stabilized.mp4` (o en la misma ruta relativa dentro de la
+carpeta de trabajo, si has configurado una — ver **⚙️ Ajustes**), y muestra
+estadísticas de cuánto ha tenido que corregir:
 
 > **Aviso sobre 4K**: la estabilización analiza y corrige a la resolución original del
 > vídeo — es lo que garantiza que la corrección sea correcta (reducir la resolución solo
@@ -199,12 +200,12 @@ tenido que corregir:
 - **Confianza de seguimiento**: en cuántos fotogramas ha tenido información fiable para
   detectar el movimiento (poca luz o poco contraste hacen que falle más).
 
-También se recuerda lo ya estabilizado (`estabilizado/.manifest.json`), con la misma
-opción de forzar.
+También se recuerda lo ya estabilizado (comprobando si ya existe el
+`<nombre>_stabilized.mp4`), con la misma opción de forzar.
 
-**Automático vs. personalizado**: por defecto la app usa unos parámetros estándar
-(equivalente a "automático" en Pinnacle — recorte mínimo para tapar los bordes). Si
-marcas **"Personalizado"** puedes ajustar:
+**Automático vs. personalizado**: los controles están siempre visibles, pero
+bloqueados (en gris) mientras esté marcado "Automático" — así ves de un vistazo qué
+valores de fábrica se van a usar. Marca **"Personalizado"** para poder tocarlos:
 
 - **Sensibilidad al temblor**: cuánto asume el análisis que tiembla la cámara.
 - **Suavizado**: cuántos fotogramas se usan para suavizar el movimiento — más alto da un
@@ -213,19 +214,29 @@ marcas **"Personalizado"** puedes ajustar:
   según haga falta en cada momento) o **manual** — tú eliges el porcentaje exacto de
   zoom, igual que el control de Pinnacle.
 
-El análisis (la parte lenta) se cachea por clip (`.vidstab_cache/`): si solo cambias el
-suavizado o el zoom y vuelves a procesar el mismo clip, no hace falta repetirlo — solo
-la fase de corrección, mucho más rápida. Cambiar la sensibilidad al temblor sí invalida
-la caché y repite el análisis.
+Debajo hay un grupo plegable **"Avanzado"** con parámetros de `vid.stab` que casi
+nunca hace falta tocar en vídeo doméstico, cada uno con su explicación: precisión del
+análisis, paso de búsqueda, contraste mínimo, interpolación, algoritmo de suavizado, y
+topes máximos de desplazamiento/rotación por fotograma. Se comportan igual que los
+básicos — bloqueados en automático, editables en personalizado.
+
+El análisis (la parte lenta) se cachea por clip (junto al propio vídeo, en
+`stabilization_data/`): si solo cambias el suavizado, el zoom, o cualquiera de los
+parámetros "avanzados" de la pasada de corrección y vuelves a procesar el mismo clip,
+no hace falta repetirlo. Cambiar la sensibilidad al temblor, la precisión, el paso de
+búsqueda o el contraste mínimo sí invalida la caché y repite el análisis (todos
+afectan a la propia detección del movimiento, no solo a cómo se corrige después).
 
 ### Analizar y ajustar un clip antes de recomprimir
 
 Cada fila de la tabla tiene un botón **"🔍 Analizar y ajustar"** que abre una
 previsualización del clip en el navegador — mueves los sliders de suavizado/zoom y ves
-al instante una aproximación del resultado, **sin generar ningún vídeo nuevo**. Cuando
-el ajuste te convence, **"Guardar ajuste"** lo deja guardado para ese clip (puedes
-volver más tarde, probar otra cosa, y guardar o **"Descartar ajuste guardado"** sin que
-eso afecte a si el clip está o no ya estabilizado en disco).
+al instante una aproximación del resultado, **sin generar ningún vídeo nuevo**. Si el
+clip ya se había analizado antes con estos mismos parámetros, la previsualización se
+carga sola nada más abrir el modal, sin tener que pulsar "Analizar clip" otra vez.
+Cuando el ajuste te convence, **"Guardar ajuste"** lo deja guardado para ese clip
+(puedes volver más tarde, probar otra cosa, y guardar o **"Descartar ajuste
+guardado"** sin que eso afecte a si el clip está o no ya estabilizado en disco).
 
 La columna "Estado" refleja esto por clip:
 
@@ -235,6 +246,11 @@ La columna "Estado" refleja esto por clip:
 - **🩹 ajustado**: hay un ajuste guardado para ese clip.
 - **ya estabilizado**: el clip ya tiene una versión estabilizada generada.
 
+**Propagar a otros clips**: dentro del modal, el botón "Propagar a otros clips…" deja
+elegir otros vídeos de la **misma carpeta** y copiarles el ajuste actual de golpe —
+útil cuando toda una tanda de clips viene de la misma sesión de grabación y necesita
+el mismo ajuste, sin tener que repetirlo uno a uno.
+
 El botón masivo **"Estabilizar marcados"** usa automáticamente el ajuste guardado de
 cada clip (si lo tiene) en vez de los parámetros del panel de arriba — así no hace
 falta reconfigurar nada clip a clip antes de lanzar el lote.
@@ -242,9 +258,9 @@ falta reconfigurar nada clip a clip antes de lanzar el lote.
 Los clips ya convertidos con un ajuste guardado **también se marcan en el Montaje**
 (cuadrícula de clips, insignia "🩹 ajuste de estabilización guardado") y, al
 arrastrarlos a la línea de tiempo, el ajuste se aplica automáticamente al clip — sin
-tener que volver a Estabilización ni buscar nada en carpetas. (Un clip que ya viene de
-una carpeta `estabilizado/` no hereda el ajuste al montaje, para no estabilizarlo dos
-veces — el ajuste guardado sigue visible en la propia página de Estabilización.)
+tener que volver a Estabilización ni buscar nada en carpetas. (Un clip que ya está
+estabilizado no hereda el ajuste al montaje, para no estabilizarlo dos veces — el
+ajuste guardado sigue visible en la propia página de Estabilización.)
 
 **Modo rápido (VideoToolbox)**: casilla opcional que usa el motor de vídeo del chip en
 vez de codificar por software. Solo acelera de verdad en Apple Silicon con motor de
@@ -259,8 +275,8 @@ archivo). Para la mejor calidad posible, déjala desmarcada.
 
 El módulo **🎬 Montaje** de la barra lateral abre un editor sencillo, estilo Pinnacle
 Studio pero muy básico, que trabaja **sobre los clips ya convertidos o estabilizados**
-(los `.mp4` de `conversion/`/`estabilizado/`; los `.MTS` originales no se pueden
-previsualizar en el navegador).
+(los `.mp4` de `conversion/` y los `<nombre>_stabilized.mp4`; los `.MTS` originales no
+se pueden previsualizar en el navegador).
 
 ### 1. Carpeta del proyecto
 
@@ -300,24 +316,29 @@ línea de tiempo de más abajo para añadirlo al montaje.
 ### Estabilizar un clip dentro del montaje
 
 Botón **"Estabilizar"** en cada clip de la línea de tiempo. A diferencia del botón
-"Estabilizar" de la pantalla principal (que genera un `.mp4` estabilizado independiente
-en `estabilizado/`), esto **no genera ningún vídeo todavía** — solo guarda qué
-corrección aplicar, y esa corrección se aplica **dentro de la exportación final**, en el
-mismo paso que el recorte, el título y las transiciones. Así un clip nunca pasa por dos
-recompresiones con pérdida (estabilizar y luego volver a codificar al exportar el
-montaje): se analiza una vez y se codifica una vez, al final.
+"Estabilizar" de la pantalla principal (que genera un `.mp4` estabilizado
+independiente, `<nombre>_stabilized.mp4`), esto **no genera ningún vídeo todavía** —
+solo guarda qué corrección aplicar, y esa corrección se aplica **dentro de la
+exportación final**, en el mismo paso que el recorte, el título y las transiciones.
+Así un clip nunca pasa por dos recompresiones con pérdida (estabilizar y luego volver
+a codificar al exportar el montaje): se analiza una vez y se codifica una vez, al
+final.
 
 1. **Analizar clip** — ejecuta el análisis (la parte lenta, sobre todo en 4K) y lo
-   cachea en `.vidstab_cache/`, compartido con el botón de estabilizar independiente:
-   si ya estabilizaste este mismo clip antes con los mismos parámetros, esto es
-   prácticamente instantáneo.
+   cachea junto al propio vídeo (`stabilization_data/`), compartido con el botón de
+   estabilizar independiente y con "Analizar y ajustar" en Estabilización: si ya se
+   analizó este mismo clip antes con los mismos parámetros, esto es prácticamente
+   instantáneo — incluso se carga solo, sin pulsar el botón, si el clip ya estaba
+   analizado al abrir este panel.
 2. Con el análisis listo aparece una **vista previa en un lienzo** (sobre una copia
    ligera del clip, en `.proxies/`, generada automáticamente) — reproduce, pausa o
    arrastra la barra, y activa o desactiva "con corrección" para comparar.
 3. **Automático** o **Personalizado** (sensibilidad al temblor, suavizado, zoom
-   automático/dinámico/manual) — al cambiar suavizado o zoom, la vista previa se
-   recalcula y redibuja al instante **en el navegador, sin servidor**; solo cambiar la
-   sensibilidad al temblor requiere volver a analizar.
+   automático/dinámico/manual, y un grupo "Avanzado" con más parámetros de vid.stab)
+   — al cambiar suavizado, zoom o cualquier parámetro solo de la fase de corrección,
+   la vista previa se recalcula y redibuja al instante **en el navegador, sin
+   servidor**; solo cambiar la sensibilidad al temblor, la precisión, el paso de
+   búsqueda o el contraste mínimo requiere volver a analizar.
    - Importante: el zoom que se ve en esta vista previa es una **aproximación**
      calculada en JavaScript (suavizado con media móvil sobre la trayectoria bruta del
      análisis) — orienta bien para decidir el ajuste, pero no es idéntico al cálculo
@@ -340,16 +361,20 @@ no es sin pérdida.
 
 Una única carpeta de trabajo opcional, para toda la app (no es parte de ningún
 proyecto). Por defecto, cada carpeta de origen que escaneas es su propia carpeta de
-trabajo — lo que generas a partir de ella (`conversion/`, `estabilizado/`,
-`recompresion/`, `montaje/`, cachés) se guarda dentro de ella misma, tal como se ha
-descrito en cada sección de arriba.
+trabajo — lo que generas a partir de ella (`conversion/`, `recompresion/`, `montaje/`,
+cachés) se guarda dentro de ella misma, tal como se ha descrito en cada sección de
+arriba. Los vídeos estabilizados son la excepción: por defecto se guardan **junto al
+original**, no en esta carpeta de trabajo (ver la sección de Estabilización).
 
 Si en **⚙️ Ajustes** fijas una carpeta de trabajo distinta, **toda** carpeta de origen
 que escanees a partir de ese momento usa esa misma carpeta para lo que genera — como
 una única librería centralizada de todo el material ya tratado, sea cual sea la tarjeta
 SD o carpeta de origen de la que provenga cada clip. Esto es especialmente útil para
 **Montaje**: la cuadrícula de clips disponibles siempre muestra el mismo histórico
-completo, sin depender de qué carpeta de origen tengas puesta en ese momento.
+completo, sin depender de qué carpeta de origen tengas puesta en ese momento. En este
+caso, la estabilización también usa la carpeta de trabajo — pero replicando la misma
+ruta relativa que tendría el vídeo en su carpeta de origen, para no mezclar entre sí
+los "junto al original" de vídeos que en realidad vienen de sitios distintos.
 
 Cambiar la carpeta de trabajo no mueve ni borra nada de lo que ya se había generado en
 la ubicación anterior — solo afecta a partir de ese momento. Quitarla (botón "Quitar")
@@ -379,9 +404,10 @@ vuelve al comportamiento por defecto.
   (mucho más rápido que una pasada completa); el navegador la suaviza y dibuja con
   `<canvas>` sobre una copia ligera del clip (`.proxies/`), sin ninguna llamada al
   servidor al mover los sliders de suavizado/zoom.
-- El ajuste guardado de un clip (`.vidstab_cache/.manifest.json`) es solo la elección
-  de parámetros, no un vídeo — es independiente de si ese clip llegó a analizarse o
-  estabilizarse de verdad, para poder probarlo/guardarlo/descartarlo libremente.
+- El ajuste guardado de un clip (`stabilization_data/<nombre>_ajustes.json`, junto al
+  propio vídeo) es solo la elección de parámetros, no un vídeo — es independiente de
+  si ese clip llegó a analizarse o estabilizarse de verdad, para poder
+  probarlo/guardarlo/descartarlo libremente.
 
 ## Pendiente
 
@@ -389,6 +415,6 @@ vuelve al comportamiento por defecto.
   pero no se han probado todavía con material real — podrían tener códecs que ffmpeg no
   maneje igual de bien que H.264/MP4.
 - No hay purga/expiración de las carpetas de caché que genera la app
-  (`.vidstab_cache/`, `.proxies/`, `.miniaturas/`) — crecen sin límite con el uso.
+  (`stabilization_data/`, `.proxies/`, `.miniaturas/`) — crecen sin límite con el uso.
 - No hay suite de tests automatizados — todo se verifica manualmente contra clips
   reales durante el desarrollo.

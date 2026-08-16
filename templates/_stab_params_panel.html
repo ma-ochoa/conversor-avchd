@@ -1,0 +1,106 @@
+{# Panel de parámetros de estabilización, reutilizado en el panel masivo de
+   Estabilización, el modal por clip de Estabilización y el modal de Montaje.
+   Requiere que la plantilla que incluye esto haga antes {% set prefix = "..." %}
+   con un prefijo distinto en cada sitio para no chocar de ids. #}
+<div class="stab-mode-row">
+  <label><input type="radio" name="{{ prefix }}-mode" id="{{ prefix }}-mode-auto" value="auto" checked> Automático (recomendado)</label>
+  <label><input type="radio" name="{{ prefix }}-mode" id="{{ prefix }}-mode-custom" value="custom"> Personalizado</label>
+</div>
+<p class="muted hint">En automático se usan los valores de fábrica que ves abajo (bloqueados, en gris).
+Pasa a "Personalizado" para poder tocarlos.</p>
+
+<div class="stab-params-panel">
+  <label>Sensibilidad al temblor: <span id="{{ prefix }}-shakiness-value">5</span>/10
+    <input type="range" id="{{ prefix }}-shakiness" min="1" max="10" step="1" value="5" disabled>
+  </label>
+  <p class="muted hint">Cuánto asume la detección que tiembla la cámara al buscar el movimiento entre
+  fotogramas. Más alto busca temblor más fuerte/rápido, pero tarda más en analizar. Cambiar esto sí
+  obliga a repetir el análisis.</p>
+
+  <label>Suavizado: <span id="{{ prefix }}-smoothing-value">10</span>
+    <input type="range" id="{{ prefix }}-smoothing" min="0" max="50" step="1" value="10" disabled>
+  </label>
+  <p class="muted hint">Cuántos fotogramas alrededor de cada uno se promedian para suavizar el movimiento
+  de cámara. Más alto da un resultado más "flotante"/cinematográfico, pero dibuja un recorrido más amplio
+  y necesita más zoom para tapar los bordes.</p>
+
+  <label>Zoom / recorte
+    <select id="{{ prefix }}-zoom-mode" disabled>
+      <option value="auto_static">Automático — recorte fijo mínimo para todo el vídeo (el habitual)</option>
+      <option value="auto_dynamic">Automático dinámico — el recorte varía según haga falta en cada momento</option>
+      <option value="manual">Manual — tú eliges el porcentaje de zoom, como en Pinnacle</option>
+    </select>
+  </label>
+  <p class="muted hint">Cuánto se amplía y recorta el fotograma para tapar los bordes que deja al mover la
+  imagen para corregirla. El automático calcula el mínimo que hace falta; el dinámico permite que varíe
+  fotograma a fotograma (menos recorte de media, algo de "respiración" del encuadre); el manual te deja
+  fijar tú el porcentaje.</p>
+  <label id="{{ prefix }}-zoom-percent-row" class="hidden">Zoom manual: <span id="{{ prefix }}-zoom-percent-value">10</span>%
+    <input type="range" id="{{ prefix }}-zoom-percent" min="0" max="50" step="1" value="10" disabled>
+  </label>
+
+  <details id="{{ prefix }}-advanced" class="stab-advanced">
+    <summary>Avanzado</summary>
+    <p class="muted hint">Parámetros de vid.stab que casi nunca hace falta tocar en vídeo doméstico — aquí
+    por si algún clip concreto lo necesita.</p>
+
+    <label>Precisión del análisis: <span id="{{ prefix }}-accuracy-value">15</span>/15
+      <input type="range" id="{{ prefix }}-accuracy" min="1" max="15" step="1" value="15" disabled>
+    </label>
+    <p class="muted hint">Cuánto detalle usa la detección al medir el movimiento de cada fotograma. Más
+    alto es más preciso pero más lento de analizar; con 15 (el máximo, el valor de fábrica) rara vez
+    compensa bajarlo, salvo para acelerar el análisis de clips muy largos a costa de algo de precisión.
+    Cambiar esto sí obliga a repetir el análisis.</p>
+
+    <label>Paso de búsqueda: <span id="{{ prefix }}-stepsize-value">6</span> px
+      <input type="range" id="{{ prefix }}-stepsize" min="1" max="32" step="1" value="6" disabled>
+    </label>
+    <p class="muted hint">Radio, en píxeles, en el que la detección busca el punto de menor movimiento
+    alrededor de cada zona del fotograma. Más bajo es más preciso pero más lento. Cambiar esto sí obliga a
+    repetir el análisis.</p>
+
+    <label>Contraste mínimo: <span id="{{ prefix }}-mincontrast-value">0.25</span>
+      <input type="range" id="{{ prefix }}-mincontrast" min="0" max="1" step="0.05" value="0.25" disabled>
+    </label>
+    <p class="muted hint">Por debajo de este nivel de contraste, la detección descarta esa zona del
+    fotograma por considerarla poco fiable (cielos despejados, paredes lisas, desenfoque...). Bajarlo
+    aprovecha más zonas de la imagen pero con seguimiento menos fiable. Cambiar esto sí obliga a repetir
+    el análisis.</p>
+
+    <label>Interpolación
+      <select id="{{ prefix }}-interpol" disabled>
+        <option value="no">Ninguna — más rápida, bordes con escalones</option>
+        <option value="linear">Lineal</option>
+        <option value="bilinear" selected>Bilineal — equilibrio, la habitual</option>
+        <option value="bicubic">Bicúbica — más suave, algo más lenta</option>
+      </select>
+    </label>
+    <p class="muted hint">Cómo se recalculan los píxeles al desplazar/rotar cada fotograma para corregirlo.
+    Bilineal es un buen equilibrio calidad/velocidad para la mayoría de vídeos; bicúbica puede dar un
+    resultado algo más nítido en clips con mucho detalle fino.</p>
+
+    <label>Algoritmo de suavizado
+      <select id="{{ prefix }}-optalgo" disabled>
+        <option value="gauss" selected>Gaussiano — la habitual</option>
+        <option value="avg">Media simple</option>
+      </select>
+    </label>
+    <p class="muted hint">Cómo se pondera la trayectoria de la cámara al calcular el suavizado. El
+    gaussiano da más peso a los fotogramas más cercanos; la media simple pesa igual a todos los que entran
+    en la ventana de suavizado. Rara vez hace falta cambiarlo.</p>
+
+    <label>Desplazamiento máximo: <span id="{{ prefix }}-maxshift-value">sin límite</span>
+      <input type="range" id="{{ prefix }}-maxshift" min="-1" max="500" step="10" value="-1" disabled>
+    </label>
+    <p class="muted hint">Tope, en píxeles, a cuánto puede desplazar la imagen la corrección en un
+    fotograma. "Sin límite" (el valor de fábrica) deja corregir lo que haga falta; ponerle un tope evita
+    correcciones exageradas en tramos con seguimiento poco fiable, a cambio de dejar pasar algo más de
+    temblor ahí.</p>
+
+    <label>Rotación máxima: <span id="{{ prefix }}-maxangle-value">sin límite</span>
+      <input type="range" id="{{ prefix }}-maxangle" min="-1" max="90" step="1" value="-1" disabled>
+    </label>
+    <p class="muted hint">Igual que el desplazamiento máximo, pero para el giro: tope en grados a cuánto
+    puede rotar la corrección un fotograma. "Sin límite" es el valor de fábrica.</p>
+  </details>
+</div>

@@ -188,16 +188,36 @@ def _clamp(value, lo, hi):
     return max(lo, min(hi, value))
 
 
+_INTERPOL_VALUES = ("no", "linear", "bilinear", "bicubic")
+_OPTALGO_VALUES = ("gauss", "avg")
+
+
 def _parse_stab_params(data: dict) -> dict:
     zoom_mode = data.get("zoom_mode", ZOOM_AUTO_STATIC)
     if zoom_mode not in (ZOOM_AUTO_STATIC, ZOOM_AUTO_DYNAMIC, ZOOM_MANUAL):
         zoom_mode = ZOOM_AUTO_STATIC
+    interpol = data.get("interpol", "bilinear")
+    if interpol not in _INTERPOL_VALUES:
+        interpol = "bilinear"
+    optalgo = data.get("optalgo", "gauss")
+    if optalgo not in _OPTALGO_VALUES:
+        optalgo = "gauss"
+    maxshift = int(data.get("maxshift", -1))
+    maxshift = maxshift if maxshift < 0 else int(_clamp(maxshift, 0, 500))
+    maxangle = float(data.get("maxangle", -1.0))
+    maxangle = maxangle if maxangle < 0 else _clamp(maxangle, 0.0, 90.0)
     return {
         "shakiness": int(_clamp(int(data.get("shakiness", 5)), 1, 10)),
         "accuracy": int(_clamp(int(data.get("accuracy", 15)), 1, 15)),
         "smoothing": int(_clamp(int(data.get("smoothing", 10)), 0, 100)),
         "zoom_mode": zoom_mode,
         "zoom_percent": _clamp(float(data.get("zoom_percent", 0.0)), -50.0, 50.0),
+        "stepsize": int(_clamp(int(data.get("stepsize", 6)), 1, 32)),
+        "mincontrast": _clamp(float(data.get("mincontrast", 0.25)), 0.0, 1.0),
+        "interpol": interpol,
+        "optalgo": optalgo,
+        "maxshift": maxshift,
+        "maxangle": maxangle,
     }
 
 
@@ -396,7 +416,9 @@ def montaje_analyze():
 
     shakiness = int(_clamp(int(data.get("shakiness", 5)), 1, 10))
     accuracy = int(_clamp(int(data.get("accuracy", 15)), 1, 15))
-    job_id = start_analysis(root, path, shakiness, accuracy)
+    stepsize = int(_clamp(int(data.get("stepsize", 6)), 1, 32))
+    mincontrast = _clamp(float(data.get("mincontrast", 0.25)), 0.0, 1.0)
+    job_id = start_analysis(root, path, shakiness, accuracy, stepsize, mincontrast)
     return jsonify({"job_id": job_id})
 
 

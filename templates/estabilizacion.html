@@ -45,37 +45,8 @@
       modesto (~15%, no 2×). La calidad baja ligeramente (VMAF ≈96/100 comparado con el modo normal al mismo
       tamaño de archivo) — para la mejor calidad posible deja esta casilla desmarcada.</p>
 
-      <div class="stab-mode-row">
-        <label><input type="radio" name="stab-mode" id="stab-mode-auto" value="auto" checked> Automático (recomendado)</label>
-        <label><input type="radio" name="stab-mode" id="stab-mode-custom" value="custom"> Personalizado</label>
-      </div>
-
-      <div id="stab-custom-panel" class="stab-custom-panel hidden">
-        <label>Sensibilidad al temblor: <span id="shakiness-value">5</span>/10
-          <input type="range" id="shakiness" min="1" max="10" step="1" value="5">
-        </label>
-        <p class="muted hint">Cuánto asume la detección que tiembla la cámara al buscar el movimiento. Más alto
-        busca temblor más fuerte/rápido, pero es más lento de analizar.</p>
-
-        <label>Suavizado: <span id="smoothing-value">10</span>
-          <input type="range" id="smoothing" min="0" max="50" step="1" value="10">
-        </label>
-        <p class="muted hint">Cuántos fotogramas alrededor se usan para suavizar el movimiento de cámara. Más alto
-        da un resultado más "flotante"/cinematográfico, pero necesita más zoom para compensar.</p>
-
-        <label>Zoom / recorte
-          <select id="zoom-mode">
-            <option value="auto_static">Automático — recorte fijo mínimo para todo el vídeo (el habitual)</option>
-            <option value="auto_dynamic">Automático dinámico — el recorte varía según haga falta en cada momento</option>
-            <option value="manual">Manual — tú eliges el porcentaje de zoom, como en Pinnacle</option>
-          </select>
-        </label>
-        <label id="zoom-percent-row" class="hidden">Zoom manual: <span id="zoom-percent-value">10</span>%
-          <input type="range" id="zoom-percent" min="0" max="50" step="1" value="10">
-        </label>
-        <p class="muted hint">Al reprocesar el mismo clip cambiando solo estos parámetros no hace falta repetir
-        el análisis (que es la parte lenta) — solo cambiar la sensibilidad al temblor lo repite.</p>
-      </div>
+      {% set prefix = "bulk-stab" %}
+      {% include "_stab_params_panel.html" %}
     </div>
     <button id="stabilize-btn" class="primary">3. Estabilizar marcados</button>
   </section>
@@ -118,40 +89,36 @@
         </div>
       </div>
 
-      <div class="stab-mode-row">
-        <label><input type="radio" name="clip-stab-mode" id="clip-stab-mode-auto" value="auto" checked> Automático</label>
-        <label><input type="radio" name="clip-stab-mode" id="clip-stab-mode-custom" value="custom"> Personalizado</label>
-      </div>
-
-      <div id="clip-stab-custom-panel" class="stab-custom-panel hidden">
-        <label>Sensibilidad al temblor: <span id="clip-stab-shakiness-value">5</span>/10
-          <input type="range" id="clip-stab-shakiness" min="1" max="10" step="1" value="5">
-        </label>
-        <p class="muted hint">Cambiar esto sí requiere volver a analizar.</p>
-        <label>Suavizado: <span id="clip-stab-smoothing-value">10</span>
-          <input type="range" id="clip-stab-smoothing" min="0" max="50" step="1" value="10">
-        </label>
-        <label>Zoom / recorte
-          <select id="clip-stab-zoom-mode">
-            <option value="auto_static">Automático — recorte fijo mínimo</option>
-            <option value="auto_dynamic">Automático dinámico</option>
-            <option value="manual">Manual — porcentaje fijo</option>
-          </select>
-        </label>
-        <label id="clip-stab-zoom-percent-row" class="hidden">Zoom manual: <span id="clip-stab-zoom-percent-value">10</span>%
-          <input type="range" id="clip-stab-zoom-percent" min="0" max="50" step="1" value="10">
-        </label>
-      </div>
+      {% set prefix = "clip-stab" %}
+      {% include "_stab_params_panel.html" %}
 
       <div class="modal-actions">
         <button id="clip-stab-discard-btn">Descartar ajuste guardado</button>
+        <button id="clip-stab-propagate-btn">Propagar a otros clips…</button>
         <button id="clip-stab-save-btn" class="primary">Guardar ajuste</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Modal de propagar ajustes a otros clips de la misma carpeta -->
+  <div id="propagate-modal" class="modal hidden">
+    <div class="modal-content">
+      <button class="modal-close" id="propagate-close">✕</button>
+      <h3>Propagar ajustes a otros clips</h3>
+      <p class="muted">Copia el ajuste actual (el que verías al guardar) como borrador guardado de los clips
+      que marques a continuación, sin tener que abrirlos uno a uno.</p>
+      <ul id="propagate-list" class="dir-list propagate-list"></ul>
+      <div class="modal-actions">
+        <button id="propagate-select-all-btn">Marcar/desmarcar todos</button>
+        <button id="propagate-apply-btn" class="primary">Propagar a los marcados</button>
+      </div>
+      <span id="propagate-status" class="status-text"></span>
     </div>
   </div>
 {% endblock %}
 
 {% block extra_scripts %}
 <script src="{{ url_for('static', filename='stabilize_preview.js') }}"></script>
+<script src="{{ url_for('static', filename='stab_params_panel.js') }}"></script>
 <script src="{{ url_for('static', filename='estabilizacion.js') }}"></script>
 {% endblock %}

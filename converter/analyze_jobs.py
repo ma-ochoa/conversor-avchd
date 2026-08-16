@@ -12,7 +12,8 @@ _jobs: dict[str, dict] = {}
 _jobs_lock = threading.Lock()
 
 
-def start_analysis(root: str, path: str, shakiness: int, accuracy: int) -> str:
+def start_analysis(root: str, path: str, shakiness: int, accuracy: int,
+                    stepsize: int = 6, mincontrast: float = 0.25) -> str:
     root_path = Path(root).expanduser().resolve()
     source = Path(path)
     job_id = uuid.uuid4().hex
@@ -22,7 +23,8 @@ def start_analysis(root: str, path: str, shakiness: int, accuracy: int) -> str:
         _jobs[job_id] = job
 
     thread = threading.Thread(
-        target=_run_analysis, args=(job_id, root_path, source, shakiness, accuracy), daemon=True
+        target=_run_analysis, args=(job_id, root_path, source, shakiness, accuracy, stepsize, mincontrast),
+        daemon=True,
     )
     thread.start()
     return job_id
@@ -34,7 +36,8 @@ def get_analysis_job(job_id: str) -> dict | None:
         return dict(job) if job else None
 
 
-def _run_analysis(job_id: str, root_path: Path, source: Path, shakiness: int, accuracy: int) -> None:
+def _run_analysis(job_id: str, root_path: Path, source: Path, shakiness: int, accuracy: int,
+                   stepsize: int, mincontrast: float) -> None:
     job = _jobs[job_id]
 
     def progress_cb(fraction):
@@ -42,7 +45,9 @@ def _run_analysis(job_id: str, root_path: Path, source: Path, shakiness: int, ac
 
     try:
         proxy_path = get_or_create_proxy(root_path, source)
-        data = get_preview_analysis(root_path, source, shakiness, accuracy, progress_cb=progress_cb)
+        data = get_preview_analysis(
+            root_path, source, shakiness, accuracy, stepsize, mincontrast, progress_cb=progress_cb
+        )
         data["proxy_path"] = str(proxy_path)
         job["data"] = data
         job["status"] = "completado"
