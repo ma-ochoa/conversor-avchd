@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from .config import resolve_output_base
 from .manifest import load_manifest, record_entry
 from .metadata import get_capture_datetime
 from .naming import unique_name
@@ -37,7 +38,7 @@ def start_job(root: str, paths: list[str], quality: str, max_width: str, force: 
     job = {
         "id": job_id,
         "root": str(root_path),
-        "output_dir": str(root_path / OUTPUT_DIR_NAME),
+        "output_dir": str(resolve_output_base(root_path) / OUTPUT_DIR_NAME),
         "items": items,
         "state": "en_curso",
         "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -59,7 +60,7 @@ def get_job(job_id: str) -> dict | None:
 
 
 def _run_job(job_id: str, root_path: Path, quality: str, max_width: str, force: bool) -> None:
-    output_dir = root_path / OUTPUT_DIR_NAME
+    output_dir = resolve_output_base(root_path) / OUTPUT_DIR_NAME
     output_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = load_manifest(root_path, OUTPUT_DIR_NAME)

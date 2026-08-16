@@ -107,6 +107,10 @@ nada se pierde si el contenedor se reinicia.
 - El **modo rápido (VideoToolbox)** de Estabilización no tiene efecto — no hay
   aceleración por hardware dentro de un contenedor Linux; usa siempre software
   (misma calidad que sin marcar la casilla en la instalación nativa).
+- La carpeta de trabajo configurada en **⚙️ Ajustes** (ver más abajo) se guarda dentro
+  del propio volumen montado (`/data/.conversor-avchd/config.json`), así que persiste
+  igual que el resto — pero la ruta que elijas ahí debe ser una ruta **dentro** de
+  `/data` (p. ej. `/data/mi_libreria`), no una ruta del Mac anfitrión.
 
 **Actualización automática**: `docker-compose.yml` etiqueta el contenedor con
 `com.centurylinklabs.watchtower.enable=true`. Cada push a `main` dispara
@@ -138,12 +142,19 @@ Pulsa **Escanear esta carpeta**. La app busca de forma recursiva:
 
 ### 3. Convertir
 
-Marca los clips/fotos que quieras y pulsa **Convertir seleccionados**. El resultado se
-guarda en una carpeta `conversion/` dentro de la carpeta de origen, lista para subir al
-NAS. Si el audio del vídeo no se oye en el navegador o el móvil (AC-3 en AVCHD, o PCM sin
-comprimir en muchas cámaras que graban directamente en `.mp4`/`.mov`), marca
-**"Recodificar audio a AAC si no es compatible"** — solo afecta al audio, el vídeo se
-sigue copiando sin recomprimir en cualquier caso.
+Marca los clips/fotos que quieras (checkbox en la cabecera de cada tabla para
+marcar/desmarcar todos de golpe) y pulsa **Convertir seleccionados**. El resultado se
+guarda en una carpeta `conversion/` — dentro de la carpeta de origen por defecto, o en
+la carpeta de trabajo configurada en **⚙️ Ajustes** si has fijado una (ver más abajo) —
+lista para subir al NAS. Si el audio del vídeo no se oye en el navegador o el móvil
+(AC-3 en AVCHD, o PCM sin comprimir en muchas cámaras que graban directamente en
+`.mp4`/`.mov`), marca **"Recodificar audio a AAC si no es compatible"** — solo afecta
+al audio, el vídeo se sigue copiando sin recomprimir en cualquier caso.
+
+**Prefijo del nombre** (opcional): antepone un texto fijo al nombre por fecha, p. ej.
+`a6400_20260815_200015.jpg` — útil para poder distinguir de qué cámara/fuente viene
+cada fichero una vez que varias fuentes conviven en la misma carpeta de salida. La
+columna "Destino" se actualiza al momento según lo escribes.
 
 Las conversiones ya hechas se recuerdan (`conversion/.manifest.json`): puedes reescanear
 la misma carpeta tras grabar más clips sin reconvertir lo ya hecho, salvo que actives
@@ -161,9 +172,10 @@ Para dos casos que el remuxeo sin pérdida no puede resolver:
 
 Controles: **Calidad** (alta/media/baja, controla el CRF de `libx264`) y **Resolución
 máxima** (original/1080p/720p/480p — nunca amplía un vídeo más pequeño que el tope
-elegido). El resultado se guarda en `recompresion/` dentro de la carpeta de origen, con
-el mismo renombrado por fecha que el resto de la app, y muestra cuánto se ha reducido
-el tamaño (p. ej. "72.4 MB → 3.8 MB (-94.8%)").
+elegido). El resultado se guarda en `recompresion/` (dentro de la carpeta de origen, o
+de la carpeta de trabajo si has configurado una en **⚙️ Ajustes**), con el mismo
+renombrado por fecha que el resto de la app, y muestra cuánto se ha reducido el tamaño
+(p. ej. "72.4 MB → 3.8 MB (-94.8%)").
 
 ## Estabilización
 
@@ -319,9 +331,29 @@ montaje): se analiza una vez y se codifica una vez, al final.
 **Exportar montaje final** renderiza el vídeo completo: recorta cada clip, aplica la
 estabilización de los clips que la tengan, superpone los títulos, encadena las
 transiciones cruzadas, y guarda el resultado en `montaje/<nombre del proyecto>_final.mp4`
-dentro de la carpeta del proyecto — todo en una sola pasada de `ffmpeg`. Esto
-**sí recodifica** el vídeo entero (es inevitable para poder unir/mezclar clips) — a
-diferencia del remuxeo, no es sin pérdida.
+— dentro de la carpeta del proyecto por defecto, o de la carpeta de trabajo configurada
+(ver **⚙️ Ajustes**) — todo en una sola pasada de `ffmpeg`. Esto **sí recodifica** el
+vídeo entero (es inevitable para poder unir/mezclar clips) — a diferencia del remuxeo,
+no es sin pérdida.
+
+## Ajustes
+
+Una única carpeta de trabajo opcional, para toda la app (no es parte de ningún
+proyecto). Por defecto, cada carpeta de origen que escaneas es su propia carpeta de
+trabajo — lo que generas a partir de ella (`conversion/`, `estabilizado/`,
+`recompresion/`, `montaje/`, cachés) se guarda dentro de ella misma, tal como se ha
+descrito en cada sección de arriba.
+
+Si en **⚙️ Ajustes** fijas una carpeta de trabajo distinta, **toda** carpeta de origen
+que escanees a partir de ese momento usa esa misma carpeta para lo que genera — como
+una única librería centralizada de todo el material ya tratado, sea cual sea la tarjeta
+SD o carpeta de origen de la que provenga cada clip. Esto es especialmente útil para
+**Montaje**: la cuadrícula de clips disponibles siempre muestra el mismo histórico
+completo, sin depender de qué carpeta de origen tengas puesta en ese momento.
+
+Cambiar la carpeta de trabajo no mueve ni borra nada de lo que ya se había generado en
+la ubicación anterior — solo afecta a partir de ese momento. Quitarla (botón "Quitar")
+vuelve al comportamiento por defecto.
 
 ## Notas técnicas
 

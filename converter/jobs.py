@@ -7,6 +7,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+from .config import resolve_output_base
 from .ffmpeg_ops import remux_clip
 from .manifest import load_manifest, record_conversion
 from .metadata import get_capture_datetime
@@ -45,7 +46,7 @@ def start_job(root: str, avchd_paths: list[str], photo_paths: list[str],
     job = {
         "id": job_id,
         "root": str(root_path),
-        "output_dir": str(root_path / OUTPUT_DIR_NAME),
+        "output_dir": str(resolve_output_base(root_path) / OUTPUT_DIR_NAME),
         "items": items,
         "state": "en_curso",
         "started_at": datetime.now().isoformat(timespec="seconds"),
@@ -67,7 +68,7 @@ def get_job(job_id: str) -> dict | None:
 
 
 def _run_job(job_id: str, root_path: Path, transcode_audio: bool, force: bool, prefix: str = "") -> None:
-    output_dir = root_path / OUTPUT_DIR_NAME
+    output_dir = resolve_output_base(root_path) / OUTPUT_DIR_NAME
     output_dir.mkdir(parents=True, exist_ok=True)
 
     manifest = load_manifest(root_path)

@@ -5,6 +5,8 @@ import re
 import uuid
 from pathlib import Path
 
+from .config import resolve_output_base
+
 PROJECTS_DIR_NAME = "montaje/proyectos"
 EXPORTS_DIR_NAME = "montaje"
 
@@ -12,7 +14,11 @@ _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9 _\-áéíóúÁÉÍÓÚñÑ]")
 
 
 def _projects_dir(root: Path) -> Path:
-    return root / PROJECTS_DIR_NAME
+    return resolve_output_base(root) / PROJECTS_DIR_NAME
+
+
+def exports_dir(root: Path) -> Path:
+    return resolve_output_base(root) / EXPORTS_DIR_NAME
 
 
 def sanitize_project_name(name: str) -> str:

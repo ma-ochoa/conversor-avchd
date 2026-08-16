@@ -4,6 +4,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+from .config import resolve_output_base
 from .ffmpeg_ops import FFMPEG_BIN
 
 THUMBS_DIR_NAME = ".miniaturas"
@@ -11,7 +12,7 @@ THUMBS_DIR_NAME = ".miniaturas"
 
 def _thumb_cache_path(root: Path, clip_path: Path) -> Path:
     digest = hashlib.sha1(str(clip_path).encode("utf-8")).hexdigest()[:16]
-    return root / THUMBS_DIR_NAME / f"{digest}.jpg"
+    return resolve_output_base(root) / THUMBS_DIR_NAME / f"{digest}.jpg"
 
 
 def get_or_create_thumbnail(root: Path, clip_path: Path, at_seconds: float = 1.0) -> Path:

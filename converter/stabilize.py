@@ -17,6 +17,7 @@ import tempfile
 from pathlib import Path
 
 from . import manifest
+from .config import resolve_output_base
 from .ffmpeg_ops import get_duration_seconds
 
 _CANDIDATE_BINARIES = [
@@ -110,7 +111,7 @@ def _run_pass(cmd: list, duration: float, progress_start: float, progress_span: 
 def _cache_paths(root: Path, source: Path, shakiness: int, accuracy: int) -> tuple:
     key = f"{source}|{shakiness}|{accuracy}"
     digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:20]
-    cache_dir = root / CACHE_DIR_NAME
+    cache_dir = resolve_output_base(root) / CACHE_DIR_NAME
     return cache_dir / f"{digest}.trf", cache_dir / f"{digest}.json"
 
 

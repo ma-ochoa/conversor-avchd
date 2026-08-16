@@ -3,6 +3,7 @@
 import os
 from pathlib import Path
 
+from .config import resolve_output_base
 from .metadata import get_capture_datetime
 from .manifest import load_manifest
 from .stabilize import CACHE_DIR_NAME as STABILIZE_CACHE_DIR_NAME, has_cached_analysis
@@ -29,13 +30,13 @@ def _iter_files(root: Path):
             yield Path(dirpath) / name
 
 
-def _processed_entry(manifest: dict, dir_name: str, root_path: Path, file_path: Path, size: int) -> dict:
+def _processed_entry(manifest: dict, dir_name: str, output_base: Path, file_path: Path, size: int) -> dict:
     entry = manifest.get(str(file_path))
     done = bool(
         entry
         and entry.get("size") == size
         and entry.get("output")
-        and (root_path / dir_name / entry["output"]).exists()
+        and (output_base / dir_name / entry["output"]).exists()
     )
     return {
         "done": done,
@@ -49,6 +50,7 @@ def scan_folder(root: str) -> dict:
     if not root_path.is_dir():
         raise NotADirectoryError(str(root_path))
 
+    output_base = resolve_output_base(root_path)
     manifest = load_manifest(root_path)
     stabilize_manifest = load_manifest(root_path, STABILIZE_DIR_NAME)
     stabilize_drafts = load_manifest(root_path, STABILIZE_CACHE_DIR_NAME)
@@ -66,8 +68,8 @@ def scan_folder(root: str) -> dict:
 
         if ext in VIDEO_EXTS:
             dt, source = get_capture_datetime(file_path, is_video=True)
-            conv = _processed_entry(manifest, OUTPUT_DIR_NAME, root_path, file_path, size)
-            stab = _processed_entry(stabilize_manifest, STABILIZE_DIR_NAME, root_path, file_path, size)
+            conv = _processed_entry(manifest, OUTPUT_DIR_NAME, output_base, file_path, size)
+            stab = _processed_entry(stabilize_manifest, STABILIZE_DIR_NAME, output_base, file_path, size)
             draft = stabilize_drafts.get(str(file_path))
             has_analysis = has_cached_analysis(
                 root_path, file_path,
@@ -93,7 +95,7 @@ def scan_folder(root: str) -> dict:
             )
         elif ext in PHOTO_EXTS:
             dt, source = get_capture_datetime(file_path, is_video=False)
-            conv = _processed_entry(manifest, OUTPUT_DIR_NAME, root_path, file_path, size)
+            conv = _processed_entry(manifest, OUTPUT_DIR_NAME, output_base, file_path, size)
             photos.append(
                 {
                     "path": str(file_path),
@@ -120,8 +122,8 @@ def scan_folder(root: str) -> dict:
 
     return {
         "root": str(root_path),
-        "output_dir": str(root_path / OUTPUT_DIR_NAME),
-        "stabilize_output_dir": str(root_path / STABILIZE_DIR_NAME),
+        "output_dir": str(output_base / OUTPUT_DIR_NAME),
+        "stabilize_output_dir": str(output_base / STABILIZE_DIR_NAME),
         "avchd_clips": avchd_clips,
         "photos": photos,
         "other_videos": other_videos,

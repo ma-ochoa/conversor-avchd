@@ -6,6 +6,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
+from .config import resolve_output_base
 from .ffmpeg_ops import FFMPEG_BIN
 
 PROXY_DIR_NAME = ".proxies"
@@ -14,7 +15,7 @@ PROXY_WIDTH = 640
 
 def _proxy_path(root: Path, source: Path) -> Path:
     digest = hashlib.sha1(str(source).encode("utf-8")).hexdigest()[:16]
-    return root / PROXY_DIR_NAME / f"{digest}.mp4"
+    return resolve_output_base(root) / PROXY_DIR_NAME / f"{digest}.mp4"
 
 
 def get_or_create_proxy(root: Path, source: Path) -> Path:

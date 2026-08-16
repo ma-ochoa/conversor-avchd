@@ -1,0 +1,43 @@
+{% extends "_base.html" %}
+{% block title %}Ajustes — Conversor de vídeo{% endblock %}
+
+{% block page_header %}
+<h1>⚙️ Ajustes</h1>
+<p class="subtitle">Configuración general de la app, no ligada a ningún proyecto en concreto.</p>
+{% endblock %}
+
+{% block content %}
+  <section id="working-dir-section">
+    <h2>Carpeta de trabajo</h2>
+    <p class="muted">Aquí se guarda todo lo que la app genera: <code>conversion/</code>,
+    <code>estabilizado/</code>, <code>recompresion/</code>, <code>montaje/</code> (proyectos y
+    exportaciones) y las cachés internas. Por defecto, cada carpeta de origen es su propia
+    carpeta de trabajo — lo generado a partir de una carpeta se guarda dentro de ella misma,
+    como hasta ahora. Si fijas aquí una carpeta de trabajo distinta, se usa esa
+    <strong>para cualquier carpeta de origen</strong>, como una única librería centralizada de
+    todo el material ya tratado (útil para ver siempre el mismo histórico en Montaje sin
+    importar desde qué carpeta escaneaste cada vez).</p>
+    <p class="muted hint">Cambiar esto no mueve ni borra nada de lo que ya se generó en la
+    ubicación anterior — solo afecta a partir de ahora.</p>
+
+    <div id="current-working-dir" class="status-text"></div>
+
+    <div class="path-row">
+      <input id="wd-path-input" type="text" data-home="{{ home }}" placeholder="Ninguna — cada carpeta de origen es su propia carpeta de trabajo">
+      <button id="wd-go-btn">Ir</button>
+      <button id="wd-browse-btn" class="primary">📁 Explorar…</button>
+    </div>
+    <div id="wd-crumb" class="crumb"></div>
+    <ul id="wd-dir-list" class="dir-list"></ul>
+
+    <div class="path-row">
+      <button id="clear-btn">Quitar (volver al comportamiento por defecto)</button>
+      <button id="save-btn" class="primary">Guardar como carpeta de trabajo</button>
+    </div>
+    <span id="save-status" class="status-text"></span>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='ajustes.js') }}"></script>
+{% endblock %}

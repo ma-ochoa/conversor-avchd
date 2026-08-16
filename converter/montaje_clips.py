@@ -3,6 +3,7 @@ se pueden reproducir en el navegador; los .MTS originales no)."""
 
 from pathlib import Path
 
+from .config import resolve_output_base
 from .ffmpeg_ops import get_duration_seconds
 from .manifest import load_manifest
 from .scanner import OUTPUT_DIR_NAME, STABILIZE_DIR_NAME
@@ -24,10 +25,11 @@ def _source_by_output(root_path: Path, subfolder: str) -> dict:
 
 def list_available_clips(root: str) -> list[dict]:
     root_path = Path(root).expanduser().resolve()
+    output_base = resolve_output_base(root_path)
     stabilize_drafts = load_manifest(root_path, STABILIZE_CACHE_DIR_NAME)
     clips = []
     for subfolder, label in _SOURCE_LABELS.items():
-        folder = root_path / subfolder
+        folder = output_base / subfolder
         if not folder.is_dir():
             continue
         source_by_output = _source_by_output(root_path, subfolder)

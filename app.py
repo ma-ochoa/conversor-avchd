@@ -8,6 +8,7 @@ from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
 
+from converter.config import get_working_dir, set_working_dir
 from converter.ffmpeg_ops import ToolsMissingError, check_tools
 from converter.fonts import list_system_fonts
 from converter.jobs import get_job, start_job
@@ -43,6 +44,28 @@ _MEDIA_EXTS = {".mp4", ".mov", ".jpg", ".jpeg", ".png", ".gif"}
 @app.route("/")
 def index():
     return render_template("index.html", home=str(Path.home()), active="conversion")
+
+
+@app.route("/ajustes")
+def ajustes_page():
+    return render_template("ajustes.html", home=str(Path.home()), active="ajustes")
+
+
+@app.route("/api/config", methods=["GET", "POST"])
+def config():
+    if request.method == "POST":
+        data = request.get_json(force=True)
+        raw_path = (data.get("working_dir") or "").strip()
+        if raw_path:
+            candidate = Path(raw_path).expanduser()
+            if not candidate.is_dir():
+                return jsonify({"error": f"No es una carpeta válida: {candidate}"}), 400
+            set_working_dir(raw_path)
+        else:
+            set_working_dir(None)
+
+    working_dir = get_working_dir()
+    return jsonify({"working_dir": str(working_dir) if working_dir else None})
 
 
 @app.route("/api/browse")

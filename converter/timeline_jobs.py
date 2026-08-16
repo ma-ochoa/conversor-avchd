@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from .project import EXPORTS_DIR_NAME, sanitize_project_name
+from .project import exports_dir, sanitize_project_name
 from .timeline_export import export_timeline
 
 _jobs: dict[str, dict] = {}
@@ -16,7 +16,7 @@ def start_export(root: str, project_name: str, clips: list, transition_seconds: 
     root_path = Path(root).expanduser().resolve()
     job_id = uuid.uuid4().hex
 
-    dest = root_path / EXPORTS_DIR_NAME / f"{sanitize_project_name(project_name)}_final.mp4"
+    dest = exports_dir(root_path) / f"{sanitize_project_name(project_name)}_final.mp4"
 
     job = {
         "id": job_id,

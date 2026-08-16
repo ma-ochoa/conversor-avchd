@@ -5,11 +5,13 @@ import json
 import threading
 from pathlib import Path
 
+from .config import resolve_output_base
+
 _lock = threading.Lock()
 
 
 def _manifest_path(root: Path, subfolder: str) -> Path:
-    return root / subfolder / ".manifest.json"
+    return resolve_output_base(root) / subfolder / ".manifest.json"
 
 
 def load_manifest(root: Path, subfolder: str = "conversion") -> dict:

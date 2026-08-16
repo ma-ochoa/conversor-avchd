@@ -8,10 +8,14 @@
 > Última actualización: sesión que añadió (1) el **historial de ajustes de
 > estabilización** — borrador por clip (guardar/probar/descartar) independiente de
 > renderizar, marcado de clips analizados/ajustados en el escaneo, y visibilidad
-> cruzada entre Estabilización y Montaje sin recomprimir — y (2) **despliegue con
+> cruzada entre Estabilización y Montaje sin recomprimir — (2) **despliegue con
 > Docker** — imagen + `docker-compose.yml` + publicación automática en GHCR por GitHub
-> Actions, enganchado al Watchtower ya compartido entre proyectos en este equipo. Repo:
-> https://github.com/ma-ochoa/conversor-avchd — rama `main`. Comprueba
+> Actions, enganchado al Watchtower ya compartido entre proyectos en este equipo — (3)
+> marcar/desmarcar todo y prefijo de nombre en Conversión — y (4) **carpeta de trabajo
+> configurable** (`⚙️ Ajustes`, `converter/config.py`) — una única ubicación opcional,
+> global a toda la app, para todo lo que se genera (conversion/, estabilizado/,
+> recompresion/, montaje/, cachés), en vez de repartido dentro de cada carpeta de
+> origen. Repo: https://github.com/ma-ochoa/conversor-avchd — rama `main`. Comprueba
 > `git log --oneline -5` y `git status` al empezar para confirmar que sigue así.
 
 ## Qué es esto
@@ -82,10 +86,15 @@ templates/index.html            Página de Conversión ({% extends "_base.html" 
 templates/recompresion.html     Página de Recompresión
 templates/estabilizacion.html   Página de Estabilización
 templates/montaje.html          Página de Montaje (editor)
+templates/ajustes.html          Página de Ajustes (carpeta de trabajo global)
 
 static/shell.js                 Recuerda la carpeta de proyecto entre módulos (localStorage)
-static/conversion.js            JS de Conversión
+static/conversion.js            JS de Conversión (checkboxes "marcar todo", prefijo de nombre)
 static/recompresion.js          JS de Recompresión
+static/ajustes.js               JS de Ajustes — usa ids "wd-*" para su selector de carpeta,
+                                 NO "path-input", porque shell.js rellena cualquier
+                                 #path-input con la última carpeta de PROYECTO recordada
+                                 (un concepto distinto de la carpeta de trabajo global)
 static/estabilizacion.js        JS de Estabilización (tabla + modal "Analizar y ajustar")
 static/stabilize_preview.js     ⭐ Preview de estabilización en canvas — compartido entre
                                  Estabilización y Montaje (ver detalle abajo)
@@ -95,10 +104,12 @@ static/montaje.css              Estilos del editor, reutilizados también por Es
                                  (modal/canvas) — cargado desde ambas plantillas
 
 converter/
+  config.py                     ⭐ Carpeta de trabajo global — ver detalle abajo
   ffmpeg_ops.py                 Remuxeo sin pérdida (remux_clip), FFMPEG_BIN="ffmpeg"
   metadata.py                   Fecha de captura vía exiftool (DateTimeOriginal, etc.)
-  naming.py                     Nombres AAAAMMDD_HHMMSS.ext con desambiguación
-  manifest.py                   .manifest.json genérico (qué ya se procesó, por carpeta)
+  naming.py                     Nombres AAAAMMDD_HHMMSS[_prefijo].ext con desambiguación
+  manifest.py                   .manifest.json genérico (qué ya se procesó, por carpeta) —
+                                 resuelve la carpeta de trabajo internamente (ver abajo)
   scanner.py                    Escaneo recursivo: vídeos/fotos/otros formatos, marca
                                  has_analysis/stabilize_draft por clip de vídeo
   jobs.py                       Job de "Convertir" (remuxeo + fotos)
@@ -259,6 +270,64 @@ tener que rebuscar en carpetas ni recomprimir nada. Piezas:
   omiten a propósito para esos clips (el borrador puede seguir viéndose en la propia
   página de Estabilización, solo no se hereda en Montaje).
 
+## Carpeta de trabajo configurable (`converter/config.py`)
+
+Petición del usuario: poder elegir dónde se guarda todo lo que la app genera —
+`conversion/`, `estabilizado/`, `recompresion/`, `montaje/` (proyectos y
+exportaciones), y las cachés (`.vidstab_cache/`, `.proxies/`, `.miniaturas/`) — en vez
+de que quede siempre repartido dentro de cada carpeta de origen que se escanea.
+
+- **Config global, no por proyecto**: `converter/config.py` guarda un único
+  `working_dir` opcional en `~/.conversor-avchd/config.json` (fuera de cualquier
+  carpeta de proyecto, a propósito — tiene que poder configurarse independientemente
+  de qué carpeta de origen se esté usando en cada momento). `Path.home()` funciona
+  igual en macOS nativo (`/Users/usuario`) que en Docker (`HOME=/data`, ver sección
+  Docker) — en el contenedor el fichero queda dentro del volumen montado, así que
+  también persiste.
+- **`resolve_output_base(root) -> Path`**: la única función que importa. Devuelve
+  `working_dir` si hay uno configurado, si no devuelve `root` tal cual (comportamiento
+  de siempre). **Es idempotente** — `resolve_output_base(resolve_output_base(root))`
+  da el mismo resultado que llamarla una vez — porque cuando hay `working_dir`
+  configurado ignora su argumento por completo. Esta propiedad fue clave para poder
+  aplicar el cambio con seguridad: se pudo llamar `resolve_output_base()` en **cada**
+  sitio que construye una ruta de salida (más de 15, repartidos por medio proyecto),
+  sin tener que rastrear con precisión quirúrgica cuál de esos sitios es "el primero"
+  en tocar cada `root` — llamarla de más nunca rompe nada.
+- **Dónde se aplicó** (todo lo que antes hacía `root / NOMBRE_SUBCARPETA` para
+  *generar/cachear* algo, no para *leer el origen*):
+  `manifest.py::_manifest_path` (con esto solo ya cubre `load_manifest`/`record_entry`/
+  `remove_entry` en todos sus llamantes: scanner, jobs, stabilize_jobs,
+  recompress_jobs, montaje_clips, los borradores de stabilize.py), `stabilize.py::
+  _cache_paths` (cubre análisis, preview y borradores), `thumbnails.py::
+  _thumb_cache_path`, `proxy.py::_proxy_path`, `project.py::_projects_dir` +
+  `exports_dir` (nueva función, la usa `timeline_jobs.py` en vez de construir la ruta
+  a mano), y los `output_dir`/`stabilize_output_dir` calculados directamente en
+  `scanner.py`, `jobs.py`, `stabilize_jobs.py`, `recompress_jobs.py`,
+  `montaje_clips.py`.
+- **Qué NO cambia**: el `root`/carpeta de origen que se escanea sigue siendo
+  exactamente el mismo concepto de siempre (dónde están los `.MTS`/`.mp4` originales) —
+  eso nunca se resuelve contra la carpeta de trabajo, solo lo que se *genera* a partir
+  de ahí. Por eso `file_path.relative_to(root_path)` en `scanner.py`, o el campo
+  `"root"` que se guarda dentro de un proyecto de montaje (metadato sin uso real hoy en
+  el frontend), siguen usando el `root` sin resolver.
+- **Sin migración de datos**: cambiar la carpeta de trabajo no mueve ni borra nada de
+  lo ya generado en la ubicación anterior — a propósito, para no arriesgar borrar
+  contenido del usuario. Simplemente, a partir de ese momento, las operaciones nuevas
+  (y las comprobaciones de "¿ya está convertido/estabilizado?") miran en la carpeta de
+  trabajo actual, no en la anterior.
+- **UI**: página nueva `⚙️ Ajustes` (`templates/ajustes.html` + `static/ajustes.js`),
+  con su propio selector de carpeta usando ids `wd-path-input`/`wd-go-btn`/etc en vez
+  de `path-input` — `shell.js` rellena *cualquier* `#path-input` que encuentre en el
+  DOM con la última carpeta de *proyecto* recordada (un concepto distinto, ver
+  `static/shell.js`), así que reutilizar ese id habría hecho que el campo se
+  sobrescribiera solo nada más cargar la página.
+- Rutas: `GET/POST /api/config`, body `{"working_dir": "ruta" | null}`. Verificado de
+  verdad en esta sesión: convertido un clip real con una carpeta de trabajo distinta a
+  la de origen, confirmado que el fichero aparece en la carpeta de trabajo (no en la de
+  origen), confirmado que Montaje lista ese clip aunque el campo "carpeta del proyecto"
+  de esa página apunte a otra carpeta distinta, y confirmado que quitar la carpeta de
+  trabajo revierte el comportamiento al de siempre.
+
 ## Hallazgos técnicos importantes (para no repetir el trabajo de descubrirlos)
 
 1. **`vid.stab` NO reescala los vectores de movimiento entre resoluciones distintas.**
@@ -324,9 +393,11 @@ tener que rebuscar en carpetas ni recomprimir nada. Piezas:
 
 ## Carpetas ocultas que la app genera dentro de la carpeta del usuario
 
-Todas relativas a la carpeta que el usuario escanea (el "root" de cada operación).
-Todas están en `.gitignore` — nunca deben subirse al repo, contienen datos/vídeo del
-usuario o caché regenerable:
+Relativas a la carpeta que el usuario escanea (el "root" de cada operación) — o a la
+**carpeta de trabajo** configurada en Ajustes, si hay una (ver
+`resolve_output_base()` más arriba); por defecto son la misma carpeta. Todas están en
+`.gitignore` — nunca deben subirse al repo, contienen datos/vídeo del usuario o caché
+regenerable:
 
 | Carpeta | Contenido | Módulo |
 |---|---|---|
@@ -350,6 +421,9 @@ GET  /                              Página de Conversión
 GET  /recompresion                  Página de Recompresión
 GET  /estabilizacion                Página de Estabilización
 GET  /montaje                       Página de Montaje (editor)
+GET  /ajustes                       Página de Ajustes (carpeta de trabajo global)
+GET|POST /api/config                Leer/fijar la carpeta de trabajo global
+                                     ({"working_dir": "ruta" | null})
 GET  /media?path=                   Sirve un fichero de vídeo/imagen (range requests)
 GET  /api/browse?path=               Listar subcarpetas (navegador de carpetas propio)
 POST /api/pick-folder                Selector nativo macOS (carpeta)
