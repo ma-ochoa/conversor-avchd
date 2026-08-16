@@ -1,4 +1,5 @@
-"""Localiza fuentes del sistema (macOS) utilizables por el filtro drawtext de ffmpeg."""
+"""Localiza fuentes del sistema (macOS o Linux/Docker) utilizables por el filtro
+drawtext de ffmpeg."""
 
 from pathlib import Path
 
@@ -7,6 +8,10 @@ _FONT_DIRS = [
     Path("/System/Library/Fonts/Supplemental"),
     Path("/Library/Fonts"),
     Path.home() / "Library/Fonts",
+    # Linux (contenedor Docker): is_dir() más abajo descarta las que no existan.
+    Path("/usr/share/fonts"),
+    Path("/usr/local/share/fonts"),
+    Path.home() / ".fonts",
 ]
 
 _FONT_EXTS = {".ttf", ".ttc", ".otf"}
@@ -23,7 +28,10 @@ def list_system_fonts() -> list[dict]:
     for directory in _FONT_DIRS:
         if not directory.is_dir():
             continue
-        for path in directory.iterdir():
+        # rglob (no iterdir): en Linux las fuentes suelen ir en subcarpetas por
+        # familia (p. ej. /usr/share/fonts/truetype/dejavu/...), a diferencia de
+        # macOS donde van sueltas directamente en la carpeta.
+        for path in directory.rglob("*"):
             if path.suffix.lower() not in _FONT_EXTS or path.name.startswith("."):
                 continue
             name = path.stem

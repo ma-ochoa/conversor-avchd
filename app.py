@@ -1,6 +1,7 @@
 """Interfaz web para convertir clips AVCHD (.MTS) a MP4 sin recompresión de vídeo,
 y renombrar vídeos/fotos con su fecha y hora de captura."""
 
+import os
 import platform
 import subprocess
 from pathlib import Path
@@ -419,4 +420,7 @@ if __name__ == "__main__":
         check_tools()
     except ToolsMissingError as exc:
         print(f"AVISO: {exc}")
-    app.run(host="127.0.0.1", port=5050, debug=False)
+    # 127.0.0.1 por defecto (solo accesible en local, sin autenticación de por medio).
+    # Dentro de Docker hace falta 0.0.0.0 para que el puerto publicado sea alcanzable
+    # desde fuera del contenedor — lo fija HOST en el Dockerfile/docker-compose.yml.
+    app.run(host=os.environ.get("HOST", "127.0.0.1"), port=5050, debug=False)

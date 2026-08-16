@@ -1,4 +1,4 @@
-# Contenido personal / generado por la app (vídeos, fotos, salidas de conversión)
+# Contenido personal / generado por la app — nunca debe entrar en la imagen
 private/
 DCIM/
 conversion/
@@ -28,11 +28,11 @@ __pycache__/
 .venv/
 venv/
 
-# macOS
+# Git / macOS / Claude
+.git/
 .DS_Store
+.claude/
 
 # Docker
-.env
-
-# Configuración local de Claude Code
-.claude/
+Dockerfile
+.dockerignore

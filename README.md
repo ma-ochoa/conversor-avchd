@@ -81,6 +81,40 @@ python3 app.py
 Y abre http://127.0.0.1:5050 (el servidor solo escucha en local, no es accesible desde
 otros equipos de la red).
 
+## Despliegue con Docker
+
+Alternativa a instalar Python/ffmpeg-full a mano — la imagen incluye ya todo lo
+necesario (el `ffmpeg` de Debian trae `libvidstab`/`libfreetype` de serie, a
+diferencia de macOS donde hace falta el paquete aparte `ffmpeg-full`).
+
+```bash
+cp .env.example .env      # edita MEDIA_DIR con la carpeta que quieras poder explorar
+docker compose up -d --build
+```
+
+Abre http://localhost:5050. La carpeta indicada en `MEDIA_DIR` queda montada dentro
+del contenedor en `/data` — es la carpeta de origen que verás por defecto en cada
+página, y desde ahí puedes navegar a cualquier subcarpeta. Todo lo que la app genera
+(`conversion/`, `estabilizado/`, `.vidstab_cache/`, etc.) se escribe dentro de esa
+misma carpeta montada, así que queda en tu Mac igual que con la instalación nativa —
+nada se pierde si el contenedor se reinicia.
+
+**Diferencias frente a la instalación nativa**:
+
+- El botón **"Explorar…"** (selector nativo de macOS) no funciona dentro del
+  contenedor — usa el navegador de carpetas propio de la página (escribe la ruta,
+  p. ej. `/data/DCIM`, y pulsa "Ir").
+- El **modo rápido (VideoToolbox)** de Estabilización no tiene efecto — no hay
+  aceleración por hardware dentro de un contenedor Linux; usa siempre software
+  (misma calidad que sin marcar la casilla en la instalación nativa).
+
+**Actualización automática**: `docker-compose.yml` etiqueta el contenedor con
+`com.centurylinklabs.watchtower.enable=true`. Cada push a `main` dispara
+`.github/workflows/docker-publish.yml`, que publica la imagen en
+`ghcr.io/ma-ochoa/conversor-avchd`; un [Watchtower](https://containrrr.dev/watchtower/)
+en marcha (compartido o propio, con `--label-enable`) la detecta, la descarga y
+recrea el contenedor solo, sin ningún paso manual.
+
 ## Conversión
 
 ### 1. Elegir la carpeta de origen

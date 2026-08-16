@@ -5,10 +5,12 @@
 > conversación anterior. Complementa a `README.md` (que es de cara al usuario); este
 > documento es técnico y explica el *por qué* de las decisiones, no solo el *qué*.
 >
-> Última actualización: sesión que añadió el **historial de ajustes de
+> Última actualización: sesión que añadió (1) el **historial de ajustes de
 > estabilización** — borrador por clip (guardar/probar/descartar) independiente de
 > renderizar, marcado de clips analizados/ajustados en el escaneo, y visibilidad
-> cruzada entre Estabilización y Montaje sin recomprimir. Repo:
+> cruzada entre Estabilización y Montaje sin recomprimir — y (2) **despliegue con
+> Docker** — imagen + `docker-compose.yml` + publicación automática en GHCR por GitHub
+> Actions, enganchado al Watchtower ya compartido entre proyectos en este equipo. Repo:
 > https://github.com/ma-ochoa/conversor-avchd — rama `main`. Comprueba
 > `git log --oneline -5` y `git status` al empezar para confirmar que sigue así.
 
@@ -67,6 +69,12 @@ una lista de TODOs sin terminar.
 ## Mapa de archivos
 
 ```
+Dockerfile                      Imagen: python:3.12-slim + ffmpeg/exiftool/fuentes vía apt
+docker-compose.yml               Servicio "app" — ver sección Docker más abajo
+.dockerignore                    Excluye contenido personal/generado del contexto de build
+.env.example                     Plantilla de MEDIA_DIR (copiar a .env, no se sube a git)
+.github/workflows/docker-publish.yml   Build + push a ghcr.io en cada push a main
+
 app.py                          Todas las rutas Flask (una sola app, sin blueprints)
 
 templates/_base.html            ⭐ Layout compartido: barra lateral + bloques Jinja
@@ -395,6 +403,77 @@ GET  /api/montaje/analyze-status/<job_id>  Devuelve trayectoria + proxy_path al 
 `title` y `stabilize` son `null`/ausentes si el clip no los tiene. `stabilize` es el
 único sitio donde vive esa configuración — no genera ningún fichero hasta la
 exportación final.
+
+## Despliegue con Docker
+
+Petición del usuario: contenerizar la app, publicarla en GitHub, y que se
+auto-actualice con Watchtower en cada cambio. Decisiones y puntos a tener en cuenta:
+
+- **`ffmpeg` de Debian YA trae `libvidstab`/`libfreetype`/`libx264`/etc. de serie**
+  (comprobado con `docker run python:3.12-slim` + `apt-get install ffmpeg` +
+  `ffmpeg -filters | grep vidstab`) — a diferencia de macOS, donde hace falta el
+  paquete aparte `ffmpeg-full`. Por eso el `Dockerfile` instala un único `ffmpeg` vía
+  `apt`, no dos binarios distintos. `find_ffmpeg_with_vidstab()` (en `stabilize.py`)
+  no necesitó ningún cambio: sus rutas candidatas de Homebrew simplemente no existen
+  en Linux y cae al *fallback* genérico (`shutil.which("ffmpeg")` + comprobar que
+  tiene `vidstabdetect` en `-filters`), que sí encuentra el `ffmpeg` de `apt`.
+- **Bug real que habría hecho el contenedor inalcanzable**: `app.py` tenía
+  `app.run(host="127.0.0.1", ...)` fijo. Dentro de un contenedor, escuchar solo en
+  `127.0.0.1` significa que ni siquiera el *port mapping* de Docker (`-p 5050:5050`)
+  llega a la app — hace falta `0.0.0.0`. Se arregló leyendo el host de una variable de
+  entorno (`HOST`, por defecto `"127.0.0.1"` para no cambiar el comportamiento nativo
+  en macOS) que el `docker-compose.yml` fija a `0.0.0.0`. Se detectó probando de
+  verdad con `curl`/navegador contra el contenedor, no dando el despliegue por bueno
+  solo porque `docker build`/`docker compose up` no dieran error.
+- **Selectores nativos de macOS** (`pick_folder`/`pick_file`, AppleScript vía
+  `osascript`) ya comprobaban `platform.system() != "Darwin"` de antes — dentro de
+  Docker devuelven un error legible en vez de romperse, sin necesitar ningún cambio.
+- **Fuentes** (`converter/fonts.py`): añadidas rutas típicas de Linux
+  (`/usr/share/fonts`, `/usr/local/share/fonts`, `~/.fonts`) a las de macOS, y
+  cambiado `iterdir()` por `rglob("*")` porque en Linux las fuentes van en
+  subcarpetas por familia (`/usr/share/fonts/truetype/dejavu/...`), no sueltas en la
+  carpeta como en macOS. El `Dockerfile` instala `fonts-dejavu-core` y
+  `fonts-liberation` para que el título del montaje tenga con qué trabajar.
+- **Carpeta de medios**: se monta la carpeta indicada en `MEDIA_DIR` (fichero `.env`,
+  no versionado — ver `.env.example`) en `/data` dentro del contenedor, y se fija
+  `HOME=/data` para que `Path.home()` (usado como valor por defecto del campo de
+  carpeta de cada página) apunte ahí. Todo lo que la app genera se escribe dentro de
+  esa misma carpeta montada — persiste en el Mac igual que en la instalación nativa.
+- **Watchtower — NO se levanta uno propio**: este equipo ya tiene un Watchtower
+  compartido corriendo para ~15 proyectos distintos
+  (`~/Desarrollo/watchtower/docker-compose.yml`, `--label-enable`, vigilando
+  contenedores de `ghcr.io/ma-ochoa/*` entre otros). `docker-compose.yml` de este
+  proyecto solo añade la etiqueta `com.centurylinklabs.watchtower.enable=true` al
+  servicio `app` — ese Watchtower ya existente lo recoge automáticamente. **Si en el
+  futuro ese Watchtower compartido deja de existir, habría que añadir aquí un
+  servicio `watchtower` propio** (`containrrr/watchtower`, montando
+  `/var/run/docker.sock`, con `--label-enable`) — no se hizo por defecto para no
+  duplicar infraestructura ni arriesgar un conflicto de nombre de contenedor (pasó
+  exactamente eso al probar: `docker compose up` falló con "container name /watchtower
+  already in use" hasta quitar el servicio propio).
+- **Imagen**: `ghcr.io/ma-ochoa/conversor-avchd`, mismo patrón de nombre que el resto
+  de proyectos de este usuario en GHCR. `docker-compose.yml` declara `image:` (lo que
+  vigila Watchtower) **y** `build: .` a la vez — así `docker compose build` en local
+  genera una imagen con el mismo nombre que la de producción (útil para probar antes
+  de hacer push), y en el servidor real basta con `docker compose pull && docker
+  compose up -d` sin necesitar el código fuente ni compilar nada.
+- **CI**: `.github/workflows/docker-publish.yml` construye y publica en cada push a
+  `main` usando el `GITHUB_TOKEN` automático de Actions (con
+  `permissions: packages: write`) — no hace falta ningún secreto configurado a mano.
+  Etiqueta la imagen como `latest` y también con el hash corto del commit.
+- **Visibilidad del paquete en GHCR**: por defecto, un paquete publicado así queda
+  **privado** aunque el repo sea público — Watchtower necesitaría credenciales
+  (`docker login ghcr.io`) para poder descargarlo si sigue así. Revisar en
+  https://github.com/users/ma-ochoa/packages/container/conversor-avchd/settings si
+  hace falta cambiar la visibilidad a pública (o configurar login en la máquina que
+  corre Watchtower) tras el primer push.
+
+Probado de verdad en esta sesión (no solo `docker build` sin errores): contenedor
+arrancado con `docker compose up -d`, healthcheck en verde, `ffmpeg -filters` con
+`vidstabdetect`/`vidstabtransform` dentro del contenedor, `exiftool -ver` funcionando,
+escaneo real de una carpeta montada vía `/api/scan`, conversión real de un clip que
+apareció correctamente en el Mac anfitrión fuera del contenedor, y fuentes Linux
+detectadas vía `/api/montaje/fonts`.
 
 ## Cómo verificar que todo sigue funcionando en la próxima sesión
 

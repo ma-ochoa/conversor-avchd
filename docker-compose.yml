@@ -1,0 +1,27 @@
+services:
+  app:
+    image: ghcr.io/ma-ochoa/conversor-avchd:latest
+    build: .
+    container_name: conversor-avchd
+    ports:
+      - "5050:5050"
+    environment:
+      - HOST=0.0.0.0
+      # Path.home() dentro del contenedor: hace que la carpeta de origen que se
+      # ofrece por defecto en cada página sea la raíz del volumen montado abajo.
+      - HOME=/data
+    volumes:
+      - ${MEDIA_DIR:?Define MEDIA_DIR en un fichero .env — copia .env.example a .env y edítalo}:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5050/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      # Recogido por el Watchtower ya compartido entre proyectos en este equipo
+      # (~/Desarrollo/watchtower, --label-enable) — no hace falta levantar uno propio
+      # aquí. En cuanto GitHub Actions publica una imagen nueva en ghcr.io (cada push
+      # a main), ese Watchtower la detecta, la descarga y recrea este contenedor solo.
+      - "com.centurylinklabs.watchtower.enable=true"
