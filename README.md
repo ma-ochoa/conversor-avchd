@@ -139,9 +139,21 @@ pierde si el contenedor se reinicia.
 **Actualización automática**: `docker-compose.yml` etiqueta el contenedor con
 `com.centurylinklabs.watchtower.enable=true`. Cada push a `main` dispara
 `.github/workflows/docker-publish.yml`, que publica la imagen en
-`ghcr.io/ma-ochoa/conversor-avchd`; un [Watchtower](https://containrrr.dev/watchtower/)
-en marcha (compartido o propio, con `--label-enable`) la detecta, la descarga y
-recrea el contenedor solo, sin ningún paso manual.
+`ghcr.io/ma-ochoa/conversor-avchd` **para amd64 y arm64**; un Watchtower en marcha
+(compartido o propio) la detecta, la descarga y recrea el contenedor solo, sin ningún
+paso manual.
+
+> **Usa un fork mantenido de Watchtower.** El original (`containrrr/watchtower`) está
+> abandonado — su última imagen es de noviembre de 2023 — y falla contra cualquier Docker
+> reciente con `client version 1.25 is too old`. La alternativa activa es
+> [`nickfedor/watchtower`](https://github.com/nicholas-fedor/watchtower), que se
+> configura igual:
+>
+> ```bash
+> docker run -d --name watchtower --restart unless-stopped \
+>   -v /var/run/docker.sock:/var/run/docker.sock \
+>   nickfedor/watchtower:latest --cleanup --interval 300
+> ```
 
 ## Importación
 

@@ -760,15 +760,27 @@ carpeta de origen que se escanea.
     eso, y se detectó ejecutando la imagen, no mirando el workflow. **Al añadir un paquete
     nuevo, hay que tocar el Dockerfile**, y comprobarlo con
     `docker run --rm --entrypoint sh <imagen> -c "python -c 'import app'"`.
-33. **La imagen de GHCR es solo `linux/amd64`.** En un Mac con Apple Silicon no se puede
-    ejecutar la publicada (`no matching manifest for linux/arm64/v8`); para probar en
-    local hay que construir con `docker build` y ya sale para la arquitectura nativa. La
-    imagen publicada sirve igualmente para un NAS o un servidor x86.
-34. **`HOST=0.0.0.0` es imprescindible al probar el contenedor a mano.** `app.py` escucha
+33. **La imagen de GHCR se publicaba solo para `linux/amd64`**, así que en un Mac con
+    Apple Silicon ni siquiera se podía descargar (`no matching manifest for
+    linux/arm64/v8`) y Watchtower no tenía forma de actualizar el contenedor allí. Ya se
+    publica multi-arquitectura: una matriz construye cada plataforma en su **runner
+    nativo** (`ubuntu-latest` y `ubuntu-24.04-arm`, gratis en repos públicos) publicando
+    por digest, y un segundo job los une con `docker buildx imagetools create`. Se eligió
+    runner nativo en vez de QEMU porque emular arm64 multiplica el tiempo de compilación.
+    Detalle a recordar: la caché de Actions necesita `scope` por arquitectura, o una pisa
+    a la otra en cada ejecución.
+34. **`containrrr/watchtower` está abandonado y rompe con Docker moderno.** Su última
+    imagen es de **noviembre de 2023**, y falla en bucle con `client version 1.25 is too
+    old. Minimum supported API version is 1.40` — el contenedor se queda en
+    `Restarting`, con lo que la actualización automática deja de funcionar en silencio.
+    Hacer `docker pull` no arregla nada porque ya está al día. La alternativa mantenida
+    es `nickfedor/watchtower` (1.21.0, Docker API v1.55), que acepta los mismos
+    argumentos y se puede sustituir sin tocar nada más.
+35. **`HOST=0.0.0.0` es imprescindible al probar el contenedor a mano.** `app.py` escucha
     en `127.0.0.1` por defecto, y sin esa variable el puerto publicado no responde desde
     fuera aunque el contenedor esté "Up". `docker-compose.yml` ya la pone; un `docker run`
     a pelo, no.
-35. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+36. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la
