@@ -6,9 +6,9 @@ inversa de la comunidad, sin contrato estable entre versiones de DSM, así que c
 sobre ellas rompería el envío en cualquier actualización del NAS.
 
 Lo que sí es oficial y documentado por Synology es **File Station** (`SYNO.FileStation.*`).
-Subir a la carpeta que Synology Photos ya tiene indexada (`/photo`, o `/homes/<usuario>/Photo`
-en espacios personales) hace que Photos indexe las fotos por su cuenta, que es exactamente
-el resultado buscado. Por eso ese es el método recomendado aquí, y va sobre HTTPS con la
+Subir a la carpeta que Synology Photos ya tiene indexada (`/photo`, o
+`/homes/<usuario>/Photos` en espacios personales — en plural en DSM 7) hace que Photos
+indexe las fotos por su cuenta, que es exactamente el resultado buscado. Por eso ese es el método recomendado aquí, y va sobre HTTPS con la
 cuenta de DSM (compatible con 2FA), sin necesidad de activar el servicio FTP en el NAS.
 
 SFTP y FTP quedan como alternativas para NAS que no sean Synology o instalaciones donde
@@ -49,15 +49,60 @@ def _remote_path(remote_root: str, relative: str) -> str:
 
 # ---------------------------------------------------------------- Synology File Station
 
-_SYNO_ERRORS = {
+# **Synology reutiliza los mismos números con significados distintos según la API.** El
+# 407 es "IP bloqueada" en el login pero "operación no permitida" en File Station, y el
+# 408 es "contraseña caducada" frente a "no existe esa carpeta". Con una sola tabla, un
+# `/photo` inexistente se anunciaba como una contraseña caducada, y un permiso que falta
+# como una IP bloqueada — mandando a mirar justo donde no estaba el problema.
+
+_COMMON_ERRORS = {
+    100: "Error desconocido en el NAS.",
+    101: "Parámetro no válido en la petición.",
+    102: "El NAS no reconoce esa función de su API.",
+    103: "El NAS no reconoce ese método de su API.",
+    104: "La versión de la API que pide esta app no está disponible en tu DSM.",
+    105: "La sesión no tiene permiso para esta operación.",
+    106: "La sesión ha caducado. Vuelve a probar la conexión.",
+    107: "La sesión se interrumpió por un inicio de sesión duplicado.",
+    119: "La sesión ya no es válida en el NAS.",
+}
+
+_AUTH_ERRORS = {
     400: "Usuario o contraseña incorrectos.",
     401: "La cuenta está deshabilitada en el NAS.",
     402: "La cuenta no tiene permisos suficientes.",
-    403: "La cuenta tiene la verificación en dos pasos activada: hace falta el código OTP.",
-    404: "El código de verificación en dos pasos (OTP) no es correcto.",
-    407: "El acceso está bloqueado desde esta IP.",
-    408: "La contraseña ha caducado y debe cambiarse en DSM.",
+    403: "La cuenta tiene la verificación en dos pasos activada: hace falta el código.",
+    404: "El código de verificación en dos pasos no es correcto.",
+    406: "El NAS exige verificación en dos pasos para esta cuenta.",
+    407: "El NAS ha bloqueado esta IP (Panel de control → Seguridad → Bloqueo automático).",
+    408: "La contraseña ha caducado y hay que cambiarla en DSM.",
+    409: "La contraseña ha caducado.",
+    410: "Hay que cambiar la contraseña en DSM antes de poder entrar.",
 }
+
+_FILESTATION_ERRORS = {
+    400: "Parámetro no válido en la operación de archivo.",
+    401: "Error desconocido en la operación de archivo.",
+    402: "El NAS está demasiado ocupado.",
+    403: "Este usuario no puede hacer esa operación.",
+    406: "No se pudo obtener la información de la cuenta desde el NAS.",
+    407: "Operación no permitida: la cuenta no tiene permiso de escritura sobre esa carpeta.",
+    408: "No existe esa carpeta en el NAS.",
+    409: "Sistema de archivos no soportado.",
+    410: "No se pudo conectar con el sistema de archivos remoto.",
+    411: "La carpeta es de solo lectura.",
+    414: "El nombre es demasiado largo.",
+    415: "El sistema de archivos es de solo lectura.",
+    1100: "No se pudo crear la carpeta.",
+    1101: "Se superaría el límite de carpetas del sistema.",
+}
+
+
+def _error_text(code, api: str, context: str) -> str:
+    if code in _COMMON_ERRORS:
+        return _COMMON_ERRORS[code]
+    table = _AUTH_ERRORS if api.startswith("SYNO.API.Auth") else _FILESTATION_ERRORS
+    return table.get(code, f"{context}: el NAS devolvió el error {code}.")
 
 
 def _syno_root(settings: dict) -> str:
@@ -88,13 +133,17 @@ _FALLBACK = {name: {"version": version, "path": "entry.cgi"}
 _OTP_CODES = {403, 406}
 
 
-def _syno_check(payload: dict, context: str) -> dict:
+def _syno_check(payload: dict, context: str, api: str = "SYNO.FileStation") -> dict:
+    """`api` decide qué tabla de errores se usa: el mismo número significa cosas
+    distintas en el login y en File Station."""
     if payload.get("success"):
         return payload.get("data", {})
     code = (payload.get("error") or {}).get("code")
-    if code in _OTP_CODES:
-        raise NasOtpRequired(_SYNO_ERRORS.get(code, "Hace falta el código de verificación."))
-    raise NasError(_SYNO_ERRORS.get(code, f"{context}: el NAS devolvió el error {code}."))
+    message = _error_text(code, api, context)
+    # Solo el login pide un segundo factor; un 403 de File Station es otra cosa.
+    if api.startswith("SYNO.API.Auth") and code in _OTP_CODES:
+        raise NasOtpRequired(message)
+    raise NasError(message)
 
 
 def _redact(message: str, *secrets: str) -> str:
@@ -221,7 +270,7 @@ class _SynologySession:
             # Con el token guardado, el NAS no vuelve a pedir el segundo factor.
             data["device_id"] = device_id
 
-        result = _syno_check(self.post(data).json(), "Inicio de sesión")
+        result = _syno_check(self.post(data).json(), "Inicio de sesión", "SYNO.API.Auth")
         self.sid = result["sid"]
         # Solo viene cuando se ha pedido enable_device_token, o sea en el login con código.
         self.device_id = result.get("did") or device_id
@@ -249,7 +298,7 @@ class _SynologySession:
         }).json()
         # 408/1100 = "ya existe": no es un fallo, es el caso normal en la segunda importación.
         if not payload.get("success") and (payload.get("error") or {}).get("code") not in (408, 1100):
-            _syno_check(payload, f"Crear la carpeta {remote_dir}")
+            _syno_check(payload, f"Crear la carpeta {remote_dir}", "SYNO.FileStation.CreateFolder")
         self._created_dirs.add(remote_dir)
 
     def upload(self, local: Path, remote_dir: str, filename: str) -> None:
@@ -274,7 +323,7 @@ class _SynologySession:
             except self.requests.exceptions.RequestException as exc:
                 detail = _redact(str(exc), self.settings.get("password", ""))
                 raise NasError(f"Error subiendo {filename}: {detail}") from exc
-        _syno_check(response.json(), f"Subir {filename}")
+        _syno_check(response.json(), f"Subir {filename}", "SYNO.FileStation.Upload")
 
 
 def _upload_synology(files: list[tuple[Path, str]], settings: dict, progress_cb) -> None:
@@ -430,7 +479,7 @@ def list_folders(settings: dict, path: str = "") -> dict:
                 "api": "SYNO.FileStation.List",
                 "version": session.api_version("SYNO.FileStation.List"),
                 "method": "list_share", "limit": "200", **common,
-            }).json(), "Listar carpetas compartidas")
+            }).json(), "Listar carpetas compartidas", "SYNO.FileStation.List")
             entries = data.get("shares", [])
         else:
             data = _syno_check(session.post({
@@ -438,7 +487,7 @@ def list_folders(settings: dict, path: str = "") -> dict:
                 "version": session.api_version("SYNO.FileStation.List"),
                 "method": "list", "folder_path": path,
                 "filetype": "dir", "limit": "500", **common,
-            }).json(), f"Listar {path}")
+            }).json(), f"Listar {path}", "SYNO.FileStation.List")
             entries = data.get("files", [])
 
     folders = sorted(
@@ -476,7 +525,7 @@ def create_folder(settings: dict, parent: str, name: str) -> dict:
         }).json()
         if not payload.get("success") and (payload.get("error") or {}).get("code") in (408, 1100):
             raise NasError(f"Ya existe una carpeta llamada «{name}» ahí.")
-        _syno_check(payload, f"Crear la carpeta {name}")
+        _syno_check(payload, f"Crear la carpeta {name}", "SYNO.FileStation.CreateFolder")
 
     return {"path": posixpath.join(parent.rstrip("/"), name)}
 
@@ -488,11 +537,21 @@ def test_connection(settings: dict) -> dict:
 
     if method == "synology":
         with _SynologySession(settings) as session:
-            _syno_check(session.post({
-                "api": "SYNO.FileStation.List",
-                "version": session.api_version("SYNO.FileStation.List"), "method": "list",
-                "folder_path": remote_root, "limit": "1", "_sid": session.sid,
-            }).json(), f"Leer la carpeta {remote_root}")
+            try:
+                _syno_check(session.post({
+                    "api": "SYNO.FileStation.List",
+                    "version": session.api_version("SYNO.FileStation.List"), "method": "list",
+                    "folder_path": remote_root, "limit": "1", "_sid": session.sid,
+                }).json(), f"Leer la carpeta {remote_root}", "SYNO.FileStation.List")
+            except NasError as exc:
+                # Llegados aquí el login ha ido bien, así que el problema es la carpeta y
+                # no las credenciales. Conviene decirlo, porque el reflejo es revisar la
+                # contraseña.
+                raise NasError(
+                    f"La conexión y las credenciales son correctas, pero no se pudo abrir "
+                    f"«{remote_root}»: {exc} Usa «Explorar…» para elegir una carpeta "
+                    f"válida del NAS."
+                ) from exc
             # Se informa de la versión negociada: si algún día falla la subida en un DSM
             # concreto, esto dice de entrada con qué versión se estaba hablando.
             negotiated = session.api_version("SYNO.API.Auth")

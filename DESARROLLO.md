@@ -801,7 +801,31 @@ carpeta de origen que se escanea.
     contenedor **no se detecta ninguna tarjeta SD ni ningún móvil** — justo las dos
     entradas del módulo de Importación. El soporte Docker se mantiene porque vale para un
     NAS o un servidor, pero en el Mac del usuario la ejecución es **nativa**.
-38. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+38. **Synology reutiliza los mismos códigos de error con significados distintos según la
+    API**, y usar una sola tabla manda a diagnosticar el problema equivocado. Casos
+    reales, con el mismo número:
+
+    | Código | En `SYNO.API.Auth` | En `SYNO.FileStation.*` |
+    |---|---|---|
+    | 403 | Hace falta el código 2FA | Este usuario no puede hacer la operación |
+    | 407 | **IP bloqueada** | **Operación no permitida** (sin permiso en la carpeta) |
+    | 408 | Contraseña caducada | **No existe esa carpeta** |
+
+    Le pasó al usuario: la app decía "El acceso está bloqueado desde esta IP" cuando el
+    NAS respondía perfectamente y por web se entraba sin problema. El 407 venía de
+    `SYNO.FileStation.List` sobre la carpeta remota, no del login. Ahora hay una tabla por
+    familia (`_AUTH_ERRORS`, `_FILESTATION_ERRORS`, más `_COMMON_ERRORS` para los 1xx que
+    sí son transversales) y `_syno_check()` recibe de qué API viene la respuesta. Además,
+    `NasOtpRequired` solo se lanza desde el login: un 403 de File Station no es un 2FA.
+    Y `test_connection()` distingue explícitamente "credenciales bien, carpeta mal", que
+    es el caso que más despista.
+39. **Para diagnosticar un NAS que "no va", `SYNO.API.Info` no necesita credenciales.**
+    `https://<host>:5001/webapi/query.cgi?api=SYNO.API.Info&version=1&method=query&query=SYNO.API.Auth`
+    responde sin sesión, así que separa en un segundo un problema de red o de puerto de
+    uno de permisos — y sin arriesgarse a disparar el bloqueo automático de DSM con
+    intentos de login fallidos. Comprobado contra el NAS del usuario: responde en 0,3 s y
+    ofrece `SYNO.API.Auth` hasta la versión 7.
+40. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la
