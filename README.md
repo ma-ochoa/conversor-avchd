@@ -127,6 +127,14 @@ pierde si el contenedor se reinicia.
   del propio volumen montado (`/data/.conversor-avchd/config.json`), así que persiste
   igual que el resto — pero la ruta que elijas ahí debe ser una ruta **dentro** de
   `/data` (p. ej. `/data/mi_libreria`), no una ruta del Mac anfitrión.
+- **Importación**: detecta tarjetas y carpetas que estén dentro de `/data`, no las del
+  Mac anfitrión. Lo mismo con el destino: por defecto `/data/Pictures/Importaciones`. Su
+  configuración (destino, cámaras aprendidas, ajustes del NAS) vive en
+  `/data/.conversor-importador/`, así que también persiste al recrear el contenedor.
+- **Leer un móvil por USB no funciona dentro del contenedor.** Docker Desktop en macOS
+  ejecuta una máquina virtual Linux sin acceso a los dispositivos USB del Mac, así que el
+  móvil ni siquiera se detecta. Para eso hace falta la instalación nativa.
+- El **envío al NAS** sí funciona: va por red, no depende del anfitrión.
 
 **Actualización automática**: `docker-compose.yml` etiqueta el contenedor con
 `com.centurylinklabs.watchtower.enable=true`. Cada push a `main` dispara

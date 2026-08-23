@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 COPY converter/ converter/
+COPY importer/ importer/
 COPY static/ static/
 COPY templates/ templates/
 

@@ -752,7 +752,23 @@ carpeta de origen que se escanea.
     con tamaño y fecha salen en los mismos 13 s. Por eso `list_folder()` **no** cuenta los
     ficheros por defecto (navegar debe ser inmediato) y la interfaz ofrece "Ver los
     archivos de esta carpeta" como un paso aparte.
-32. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+32. **El build de Docker pasa aunque la imagen esté rota.** El `Dockerfile` copia paquete
+    a paquete (`COPY converter/`, `COPY static/`…), así que al añadir `importer/` había
+    que añadir su `COPY`. Sin él, **el build termina con éxito** — solo copia ficheros, no
+    ejecuta nada — el workflow publica la imagen en GHCR, y el fallo aparece al arrancar
+    el contenedor: `ModuleNotFoundError: No module named 'importer'`. Pasó exactamente
+    eso, y se detectó ejecutando la imagen, no mirando el workflow. **Al añadir un paquete
+    nuevo, hay que tocar el Dockerfile**, y comprobarlo con
+    `docker run --rm --entrypoint sh <imagen> -c "python -c 'import app'"`.
+33. **La imagen de GHCR es solo `linux/amd64`.** En un Mac con Apple Silicon no se puede
+    ejecutar la publicada (`no matching manifest for linux/arm64/v8`); para probar en
+    local hay que construir con `docker build` y ya sale para la arquitectura nativa. La
+    imagen publicada sirve igualmente para un NAS o un servidor x86.
+34. **`HOST=0.0.0.0` es imprescindible al probar el contenedor a mano.** `app.py` escucha
+    en `127.0.0.1` por defecto, y sin esa variable el puerto publicado no responde desde
+    fuera aunque el contenedor esté "Up". `docker-compose.yml` ya la pone; un `docker run`
+    a pelo, no.
+35. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la
