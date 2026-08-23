@@ -47,7 +47,7 @@ una lista de TODOs sin terminar.
 ## Arquitectura
 
 - **Backend**: Flask (`app.py`), un solo proceso, `debug=False`. Puerto **5050** fijo
-  (hardcoded en `app.py` y en `Iniciar Conversor AVCHD.command`).
+  (hardcoded en `app.py` y en `Iniciar Conversor de vídeo.command`).
 - **Frontend**: HTML/CSS/JS servidos por Flask (`templates/`, `static/`), sin build,
   sin framework, sin dependencias npm. **6 páginas** compartiendo un layout base con
   barra lateral (`templates/_base.html`, `{% extends %}`): `/importacion`, `/ubicacion`,
@@ -780,7 +780,28 @@ carpeta de origen que se escanea.
     en `127.0.0.1` por defecto, y sin esa variable el puerto publicado no responde desde
     fuera aunque el contenedor esté "Up". `docker-compose.yml` ya la pone; un `docker run`
     a pelo, no.
-36. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+36. **Un `.command` abierto desde el Finder hereda un PATH mínimo**, y ahí se rompen dos
+    cosas de golpe. El PATH que llega es
+    `/usr/gnu/bin:/usr/local/bin:/bin:/usr/bin:.` — sin Homebrew y **sin `/usr/sbin`**:
+    - `ffmpeg` y `exiftool` no se encuentran, y el lanzador antiguo cerraba la ventana
+      diciendo que faltaban aunque estuvieran instalados.
+    - **`diskutil` tampoco se encuentra**, y ese es el fallo peor porque es silencioso:
+      `importer/sources.py` lo invocaba por nombre, saltaba `FileNotFoundError`, lo
+      capturaba el `except` general de `_mounted_volumes()` y **las tarjetas de /Volumes
+      desaparecían de la lista sin ningún aviso**. Solo pasaba al arrancar desde el
+      Finder; desde una terminal funcionaba, que es lo que lo hace difícil de ver.
+
+    Arreglado en dos sitios: el lanzador exporta el PATH completo, y `sources.py` llama a
+    `/usr/sbin/diskutil` por ruta absoluta — **la app no debe depender de cómo la
+    lancen**. Además, el fallo de `diskutil` ya no tumba la detección entera: se captura
+    por volumen, de modo que la tarjeta aparece aunque no se puedan leer su tamaño ni si
+    es extraíble.
+37. **Docker no sirve en macOS para este proyecto.** Docker Desktop corre una VM Linux
+    que no ve `/Volumes` ni los dispositivos USB del anfitrión, así que desde el
+    contenedor **no se detecta ninguna tarjeta SD ni ningún móvil** — justo las dos
+    entradas del módulo de Importación. El soporte Docker se mantiene porque vale para un
+    NAS o un servidor, pero en el Mac del usuario la ejecución es **nativa**.
+38. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la

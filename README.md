@@ -85,8 +85,10 @@ respectivamente). Todo lo demás funciona sin ellos.
 
 ## Arranque
 
-**Opción rápida (macOS)**: haz doble clic en `Iniciar Conversor AVCHD.command` — arranca
-el servidor y abre el navegador automáticamente.
+**Opción recomendada (macOS)**: haz doble clic en **`Iniciar Conversor de vídeo.command`**.
+Comprueba lo necesario, dice qué tarjetas y móviles hay conectados, arranca el servidor y
+abre el navegador. Si falta algo opcional (ffmpeg-full, gphoto2, requests) avisa de qué
+función se pierde y sigue adelante. Para pararlo, cierra la ventana o pulsa Ctrl+C.
 
 **Desde terminal**:
 
@@ -96,6 +98,12 @@ python3 app.py
 
 Y abre http://127.0.0.1:5050 (el servidor solo escucha en local, no es accesible desde
 otros equipos de la red).
+
+> **En macOS, ejecuta la app de forma nativa, no en Docker.** Docker Desktop corre una
+> máquina virtual Linux que **no ve `/Volumes` ni los dispositivos USB del Mac**, así que
+> desde un contenedor no se detectan las tarjetas SD insertadas ni los móviles. La opción
+> Docker de abajo sigue siendo válida para un NAS o un servidor, pero para importar desde
+> tarjeta o móvil hace falta la instalación nativa.
 
 ## Despliegue con Docker
 

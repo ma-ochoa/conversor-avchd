@@ -97,6 +97,13 @@ def _has_media(path: Path, max_depth: int = 2, deadline: float | None = None) ->
     return False
 
 
+# Ruta absoluta a propósito: al abrir un `.command` desde el Finder, el PATH heredado no
+# incluye `/usr/sbin`, así que llamar a "diskutil" a secas lanza FileNotFoundError. Como
+# el fallo se capturaba, las tarjetas simplemente **desaparecían de la lista** sin ningún
+# aviso — pero solo al arrancar desde el Finder, no desde una terminal.
+_DISKUTIL = "/usr/sbin/diskutil"
+
+
 def _macos_volumes() -> list[dict]:
     volumes = []
     root = Path("/Volumes")
@@ -109,18 +116,21 @@ def _macos_volumes() -> list[dict]:
         if mount.resolve() == Path("/"):
             continue
 
+        # Lo que aporta diskutil (si es extraíble, cuánto ocupa) es información
+        # adicional: si falla, el volumen tiene que salir igualmente en la lista. Antes
+        # una excepción aquí tumbaba la detección entera y no aparecía ninguna tarjeta.
         removable, total, free = False, None, None
-        result = subprocess.run(
-            ["diskutil", "info", "-plist", str(mount)], capture_output=True, timeout=15
-        )
-        if result.returncode == 0:
-            try:
+        try:
+            result = subprocess.run(
+                [_DISKUTIL, "info", "-plist", str(mount)], capture_output=True, timeout=15
+            )
+            if result.returncode == 0:
                 info = plistlib.loads(result.stdout)
                 removable = bool(info.get("Ejectable") or info.get("RemovableMedia"))
                 total = info.get("TotalSize")
                 free = info.get("FreeSpace")
-            except plistlib.InvalidFileException:
-                pass
+        except (OSError, plistlib.InvalidFileException, subprocess.SubprocessError):
+            pass
 
         volumes.append({
             "path": str(mount),
