@@ -1,0 +1,130 @@
+{% extends "_base.html" %}
+{% block title %}Ubicación — Conversor de vídeo{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/leaflet.css') }}">
+<link rel="stylesheet" href="{{ url_for('static', filename='ubicacion.css') }}">
+{% endblock %}
+
+{% block page_header %}
+<h1>📍 Ubicación</h1>
+<p class="subtitle">Agrupa lo importado por sesiones y pon ubicación a las fotos y vídeos que
+no la traen, para que Synology Photos las sitúe en el mapa.</p>
+{% endblock %}
+
+{% block content %}
+  <section id="folder-section">
+    <h2>1. Carpeta de la biblioteca</h2>
+    <div class="path-row">
+      <input id="root-input" type="text" placeholder="Carpeta donde importas las fotos">
+      <button id="pick-root-btn">📁 Cambiar…</button>
+      <button id="load-btn" class="primary">Cargar</button>
+    </div>
+    <p id="folder-status" class="status-text"></p>
+    <p id="index-stats" class="muted"></p>
+    <div class="path-row">
+      <button id="reindex-btn">Buscar archivos nuevos</button>
+      <button id="reindex-full-btn">Releer todo de cero</button>
+      <span id="reindex-status" class="status-text"></span>
+    </div>
+    <p class="hint">«Buscar archivos nuevos» añade al índice lo que aún no esté (por ejemplo,
+    fotos importadas antes de que existiera este módulo). «Releer todo» vuelve a leer el EXIF
+    de cada archivo, útil si el índice se ha quedado desfasado.</p>
+  </section>
+
+  <section id="groups-section" class="hidden">
+    <h2>2. Sesiones detectadas</h2>
+    <div class="controls-row">
+      <label>Cortar grupo tras
+        <input id="gap-input" type="number" min="5" max="720" step="5" value="{{ default_gap }}"> min sin disparar
+      </label>
+      <label>Mostrar
+        <select id="group-filter">
+          <option value="all">Todas las sesiones</option>
+          <option value="missing" selected>Solo las que faltan por ubicar</option>
+          <option value="located">Solo las ya ubicadas</option>
+        </select>
+      </label>
+      <span id="groups-summary" class="muted"></span>
+    </div>
+    <p class="hint">Una foto de las 9:00 se agrupa con toda la secuencia que sigue a esa hora;
+    si luego disparas a las 11:00, eso ya es otra sesión. Puedes marcar varias sesiones a la vez
+    para asignarles la misma ubicación.</p>
+
+    <div class="path-row">
+      <button id="select-all-btn">Marcar todas las visibles</button>
+      <button id="select-none-btn">Desmarcar todas</button>
+      <span id="selection-summary" class="status-text"></span>
+    </div>
+
+    <div id="groups-list" class="groups-list"></div>
+  </section>
+
+  <section id="match-section" class="hidden">
+    <h2>3. Deducir ubicación desde referencias</h2>
+    <p class="muted">Busca, para cada sesión sin ubicación, una referencia con GPS tomada a una
+    hora cercana y propone su posición. Es una aproximación: se muestra siempre con cuánta
+    diferencia de tiempo se dedujo.</p>
+
+    <div class="options">
+      <label><input type="checkbox" id="use-index" checked> Usar las fotos ya importadas que sí tienen GPS</label>
+      <p class="hint">Las del móvil que hayas importado a esta misma biblioteca.</p>
+    </div>
+
+    <div class="path-row">
+      <input id="reference-folder" type="text" placeholder="Carpeta con fotos del móvil (opcional, no se copia nada)">
+      <button id="pick-reference-btn">📁 Elegir…</button>
+    </div>
+
+    <div class="path-row">
+      <input id="gpx-path" type="text" placeholder="Track GPX (opcional)">
+      <button id="pick-gpx-btn">📁 Elegir…</button>
+    </div>
+
+    <div class="controls-row">
+      <label>Tolerancia
+        <input id="tolerance-input" type="number" min="1" max="240" step="1" value="{{ default_tolerance }}"> min
+      </label>
+      <label>Desfase horario del GPX
+        <input id="utc-offset" type="number" min="-12" max="14" step="0.5" value="{{ default_utc_offset }}"> h
+      </label>
+    </div>
+    <p class="hint">El GPX guarda la hora en UTC y las cámaras la hora local sin zona. El valor
+    de arriba es el de tu sistema; ajústalo si el track se grabó en otro huso.</p>
+
+    <button id="match-btn" class="primary">Buscar coincidencias</button>
+    <span id="match-status" class="status-text"></span>
+  </section>
+
+  <section id="map-section" class="hidden">
+    <h2>4. Asignar ubicación a lo seleccionado</h2>
+    <div class="path-row">
+      <input id="place-search" type="text" placeholder="Buscar un lugar (p. ej. Plaza Nueva, Granada)">
+      <button id="search-btn">Buscar</button>
+      <span id="search-status" class="status-text"></span>
+    </div>
+    <ul id="search-results" class="search-results"></ul>
+
+    <div id="map"></div>
+    <p class="muted">Pincha en el mapa para colocar el marcador, o elige un resultado de la búsqueda.</p>
+    <p id="chosen-place" class="chosen-place">Sin posición elegida.</p>
+
+    <div class="options">
+      <label><input type="checkbox" id="backup-originals" checked> Guardar copia del original antes de escribir</label>
+      <p class="hint warn">La ubicación se escribe <strong>dentro del archivo</strong> (es lo único
+      que Synology Photos lee). Con esta casilla marcada, el original intacto queda en una subcarpeta
+      <code>_originales_sin_gps/</code> por si hay que deshacerlo.</p>
+    </div>
+
+    <button id="assign-btn" class="primary">Asignar a las sesiones marcadas</button>
+    <button id="restore-btn">Deshacer en las marcadas</button>
+    <span id="assign-status" class="status-text"></span>
+    <progress id="assign-bar" class="hidden" max="1" value="0"></progress>
+    <ul id="assign-errors" class="warn-list"></ul>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='vendor/leaflet.js') }}"></script>
+<script src="{{ url_for('static', filename='ubicacion.js') }}"></script>
+{% endblock %}

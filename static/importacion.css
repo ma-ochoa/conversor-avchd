@@ -1,0 +1,317 @@
+/* El estilo compartido de .path-row solo alarga #path-input, que esta página no usa. */
+#destination-input {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.source-list { list-style: none; padding: 0; margin: 0.75rem 0 0; }
+
+.source-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  cursor: pointer;
+}
+
+.source-list li:hover { background: var(--bg); }
+.source-list li.selected { border-color: var(--accent); background: var(--bg); }
+.source-icon { font-size: 1.5rem; }
+.source-name { font-weight: 600; }
+.source-meta { font-size: 0.8rem; color: var(--muted); }
+
+.camera-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem;
+  margin-bottom: 0.9rem;
+}
+
+.camera-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.camera-head input[type="text"] {
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  min-width: 14rem;
+}
+.camera-model { font-size: 0.8rem; color: var(--muted); }
+
+.day-row {
+  display: grid;
+  /* La etiqueta del día lleva fecha, recuentos y el aviso de "sin ubicación": con una
+     columna estrecha se partía en tres líneas. */
+  grid-template-columns: auto minmax(16rem, 24rem) 1fr;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.day-row input[type="text"] {
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  width: 100%;
+}
+
+.day-counts { font-size: 0.8rem; color: var(--muted); }
+
+.preview-toolbar { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; }
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: 0.5rem;
+}
+
+.preview-item { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: var(--bg); }
+.preview-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.preview-item.failed::after {
+  content: "sin vista previa";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  color: var(--muted);
+  text-align: center;
+  padding: 0.4rem;
+}
+
+.preview-badge {
+  position: absolute;
+  left: 0.25rem;
+  bottom: 0.25rem;
+  font-size: 0.65rem;
+  padding: 0.05rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: white;
+}
+
+.preview-item.dup { outline: 2px solid var(--muted); outline-offset: -2px; opacity: 0.55; }
+
+.gps-badge {
+  position: absolute;
+  right: 0.25rem;
+  top: 0.25rem;
+  font-size: 0.8rem;
+  line-height: 1;
+  padding: 0.15rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+}
+
+.gps-badge.no-gps { position: absolute; }
+
+/* La barra roja cruzada marca "sin ubicación" sin depender de un emoji tachado, que no
+   existe de forma fiable en todas las plataformas. */
+.gps-badge.no-gps::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 120%;
+  height: 2px;
+  background: var(--err);
+  transform: rotate(-45deg);
+  transform-origin: center;
+}
+
+.gps-badge.no-gps { filter: grayscale(1); }
+
+.day-label {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline dotted var(--muted);
+}
+
+.day-label:hover { color: var(--accent); }
+.day-counts.nogps { color: var(--err); }
+
+.field-with-button { display: flex; gap: 0.4rem; }
+.field-with-button input { flex: 1; min-width: 0; }
+
+.nas-browser {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.browser-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+
+.browser-path {
+  flex: 1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#browser-filter, #browser-new-name {
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#browser-filter { width: 100%; margin-bottom: 0.5rem; }
+#browser-new-name { flex: 1; min-width: 8rem; }
+
+.browser-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 0.6rem;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.browser-list li {
+  padding: 0.4rem 0.6rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.browser-list li:last-child { border-bottom: none; }
+.browser-list li:hover { background: var(--bg); color: var(--accent); }
+
+.browser-actions { display: flex; gap: 0.4rem; flex-wrap: wrap; align-items: center; }
+
+.phone-notice {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.9rem;
+}
+
+.phone-notice p { margin: 0.4rem 0 0.6rem; font-size: 0.82rem; }
+
+.mtp-browser {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.mtp-browser .browser-list { max-height: 260px; }
+
+/* La fila de "ver los N archivos" cierra la lista de carpetas y se distingue de ellas. */
+.mtp-files-row { border-top: 1px solid var(--accent) !important; color: var(--accent); }
+
+.mtp-selection {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.mtp-selection p { margin: 0.3rem 0; font-size: 0.85rem; }
+.mtp-selection .controls-row { gap: 1rem; }
+
+.mtp-selection input[type="date"] {
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+#mtp-bar { width: 100%; height: 8px; margin-top: 0.5rem; }
+
+.device-state {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin: 0.6rem 0;
+  font-size: 0.85rem;
+}
+
+.otp-row {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+}
+
+.otp-row label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
+
+.otp-row input {
+  width: 9rem;
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 1.1rem;
+  letter-spacing: 0.15em;
+}
+
+.otp-row button { margin-top: 0.5rem; }
+
+.event-inline {
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.event-inline label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.9rem; }
+
+.event-inline input {
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.nas-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.nas-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+.nas-form label.inline { flex-direction: row; align-items: center; gap: 0.4rem; }
+
+.nas-form input, .nas-form select {
+  padding: 0.45rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.hint.warn { border-left-color: var(--err); }
+
+.warn-list { font-size: 0.85rem; color: var(--err); padding-left: 1.2rem; }
+
+#overall-bar { width: 100%; height: 10px; margin-bottom: 0.75rem; }
+
+details summary { cursor: pointer; font-weight: 600; margin-bottom: 0.5rem; }

@@ -8,6 +8,8 @@ montaje/
 .miniaturas/
 .vidstab_cache/
 .proxies/
+.ubicaciones.json
+_originales_sin_gps/
 *.MTS
 *.M2TS
 *.mp4

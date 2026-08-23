@@ -1,0 +1,123 @@
+#root-input, #reference-folder, #gpx-path, #place-search {
+  flex: 1;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.controls-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1.25rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+
+.controls-row input[type="number"] {
+  width: 5rem;
+  padding: 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.groups-list { display: flex; flex-direction: column; gap: 0.6rem; margin-top: 0.75rem; }
+
+.group-card {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--err);
+  border-radius: 8px;
+  padding: 0.7rem 0.9rem;
+}
+
+/* El borde izquierdo dice de un vistazo si la sesión está resuelta o no. */
+.group-card.located { border-left-color: var(--ok); }
+.group-card.selected { background: var(--bg); border-color: var(--accent); }
+
+.group-head { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+.group-head > div { flex: 1; min-width: 12rem; }
+.place-tag { color: var(--ok); max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.suggestion {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+
+.suggestion-warn { color: var(--err); }
+
+.blocked-note { color: var(--err); font-size: 0.8rem; margin-top: 0.2rem; }
+
+.thumb-strip { display: flex; align-items: center; gap: 0.35rem; margin-top: 0.6rem; flex-wrap: wrap; }
+
+.strip-thumb {
+  width: 62px;
+  height: 62px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--bg);
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.strip-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.strip-thumb.failed { border: 1px dashed var(--border); }
+.strip-thumb.nogps::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 3px;
+  background: var(--err);
+}
+
+.search-results { list-style: none; padding: 0; margin: 0.5rem 0; }
+
+.search-results li {
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 0.3rem;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.search-results li:hover { background: var(--bg); border-color: var(--accent); }
+
+#map {
+  height: 380px;
+  border-radius: 8px;
+  margin: 0.75rem 0;
+  border: 1px solid var(--border);
+}
+
+/* Leaflet asume tiles claros; en tema oscuro se atenúan para no deslumbrar. */
+.leaflet-tile { filter: brightness(0.85) contrast(1.05); }
+.leaflet-container { background: var(--bg); }
+.leaflet-control-attribution { font-size: 0.65rem; }
+
+.map-dot {
+  border-radius: 50%;
+  border: 2px solid white;
+  background: var(--muted);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.6);
+}
+
+.map-dot.sel { background: var(--accent); }
+.map-dot.chosen { background: var(--err); width: 18px !important; height: 18px !important; }
+
+.chosen-place { font-size: 0.9rem; font-weight: 600; }
+
+.warn-list { font-size: 0.85rem; color: var(--err); padding-left: 1.2rem; }
+.hint.warn { border-left-color: var(--err); }
+
+#assign-bar { width: 100%; height: 8px; margin-top: 0.5rem; }

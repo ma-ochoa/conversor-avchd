@@ -2,9 +2,13 @@
 
 Aplicación web (Flask, en local) para el flujo de trabajo completo de vídeo de cámara —
 AVCHD `.MTS`/`.M2TS` y `.mp4`/`.mov` (incluido 4K) — organizada como un editor con
-**cuatro módulos** en una barra lateral persistente, cada uno con su propia carpeta de
+**seis módulos** en una barra lateral persistente, cada uno con su propia carpeta de
 proyecto (se recuerda al cambiar de sección):
 
+- **💾 Importación** — vuelca tarjetas de cámara al disco organizadas por cámara y día,
+  y las envía al NAS.
+- **📍 Ubicación** — agrupa lo importado por sesiones y pone coordenadas GPS a las fotos
+  y vídeos que no las traen.
 - **📼 Conversión** — remuxeo sin pérdida y renombrado por fecha de captura.
 - **🗜️ Recompresión** — para formatos que no admiten remuxeo, o para reducir el tamaño
   de un clip ya convertido (compartir por WhatsApp/email, etc.).
@@ -18,6 +22,15 @@ Photos, Plex, Emby, etc.) y se vea bien tanto en el móvil como en la TV.
 
 ## Funciones
 
+- **Importación de tarjetas**: detecta la tarjeta insertada (o una carpeta ya copiada al
+  Escritorio, que se trata igual), identifica la cámara por sus metadatos, y copia todo a
+  una carpeta local ordenada por cámara y por día, separando JPG de RAW y dejando los
+  vídeos aparte. Verifica cada copia por checksum, puede borrar la tarjeta solo tras
+  comprobarla, evita recopiar lo ya importado, y sube el resultado al NAS.
+- **Ubicación GPS**: marca qué fotos traen coordenadas y cuáles no, las agrupa en sesiones
+  por cercanía en el tiempo, y deduce la posición de las que faltan cruzándolas con las
+  fotos del móvil o con un track GPX. Lo que no se pueda deducir se elige a mano sobre un
+  mapa de OpenStreetMap con buscador.
 - **Remuxeo sin pérdida** (Conversión): copia el vídeo H.264 bit a bit, solo cambia el
   contenedor a `.mp4` — vale tanto para AVCHD (`.MTS`/`.M2TS`) como para cámaras que ya
   graban en `.mp4`/`.mov` (incluido 4K), cuyo audio (a menudo PCM sin comprimir) puede
@@ -66,6 +79,9 @@ git clone https://github.com/ma-ochoa/conversor-avchd.git
 cd conversor-avchd
 pip3 install -r requirements.txt
 ```
+
+`requests` y `paramiko` solo hacen falta para enviar al NAS (File Station y SFTP
+respectivamente). Todo lo demás funciona sin ellos.
 
 ## Arranque
 
@@ -118,6 +134,195 @@ pierde si el contenedor se reinicia.
 `ghcr.io/ma-ochoa/conversor-avchd`; un [Watchtower](https://containrrr.dev/watchtower/)
 en marcha (compartido o propio, con `--label-enable`) la detecta, la descarga y
 recrea el contenedor solo, sin ningún paso manual.
+
+## Importación
+
+Es el paso previo a todo lo demás: pasar el material de la tarjeta al disco, ya ordenado.
+
+### 1. Origen
+
+**Detectar tarjetas** busca tarjetas insertadas y también carpetas del Escritorio o de
+Descargas que parezcan un volcado manual — una carpeta que copiaste tú a mano se trata
+exactamente igual que una tarjeta. Si no aparece lo que buscas, **Elegir una carpeta…**
+sirve para cualquier ruta.
+
+> En macOS, la primera vez el sistema pedirá permiso para leer el Escritorio y Descargas.
+> Hasta que se conceda (Ajustes del Sistema → Privacidad y seguridad → Archivos y
+> carpetas), esas dos carpetas no se listan y la app lo avisa en pantalla. «Elegir una
+> carpeta…» funciona igualmente.
+
+### 2. Qué hay en el origen
+
+La app lee los metadatos de todo el contenido e identifica **cada cámara por su modelo
+EXIF**, proponiendo un nombre de carpeta (`ILCE-6400` → `Sony A6400`). Puedes cambiarlo:
+queda recordado y la próxima vez que uses esa cámara ya saldrá elegido.
+
+El contenido se agrupa **por día**, y cada día tiene su casilla para incluirlo o no y un
+campo para el **nombre del evento**. Si lo rellenas, la carpeta pasa a ser
+`2026-08-09 - Concierto` en vez de solo `2026-08-09`.
+
+### 3. Vista rápida
+
+Cuadrícula de miniaturas de todo lo que hay en la tarjeta, incluidos los RAW (se extrae
+la previsualización que llevan dentro) y los vídeos. Se generan según van apareciendo en
+pantalla y se guardan fuera de la tarjeta, que no se toca. Lo que ya se importó antes
+aparece atenuado y marcado.
+
+**Móviles conectados**: si enchufas un Android o un iPhone se detecta, y **Explorar el
+móvil** abre sus carpetas para elegir qué bajar: entras en `DCIM/Camera` y dejas fuera lo
+descargado de Telegram, WhatsApp o las capturas de pantalla. Verás los archivos con su
+fecha y tamaño, puedes acotar por rango de fechas y omitir lo que ya importaste otra vez.
+Lo que descargues pasa al flujo normal: se organiza por cámara, día y evento igual que una
+tarjeta.
+
+> **El móvil tiene que estar en modo «Transferencia de archivos» (MTP).** Con el cable
+> puesto, baja la barra de notificaciones del móvil, toca la notificación del USB y elige
+> esa opción. En el otro modo, «Transferencia de imágenes (PTP)», el móvil **no muestra
+> carpetas**: entrega todas las fotos en una lista plana con la cámara mezclada con
+> Telegram y WhatsApp — que es justamente lo que hace inservible a Captura de Imagen para
+> esto. Además, en PTP macOS reserva el móvil para sí y la app no puede leerlo.
+
+Necesita gphoto2, que se instala aparte:
+
+```bash
+brew install libgphoto2 && pip install gphoto2
+```
+
+Sin él, el móvil se sigue detectando y se ofrece abrir **Captura de Imagen** para volcar a
+una carpeta, que luego se detecta aquí como si fuera una tarjeta.
+
+**Filtrar por día**: pulsando la fecha en el paso anterior (o eligiéndola en el desplegable
+«Día») la cuadrícula muestra solo ese día, y aparece un campo para escribir el nombre del
+evento sin salir de aquí — la idea es mirar las fotos y decidir con ellas delante cómo se
+va a llamar la carpeta. Es el mismo dato que el campo del paso 2: se sincronizan.
+
+**Indicador de ubicación**: cada miniatura lleva un 📍 en la esquina. En color si la foto
+trae coordenadas GPS; en gris y tachado en rojo si no. El recuento por día y el total
+aparecen también en los resúmenes. Esa información se guarda en un fichero
+`.ubicaciones.json` dentro de la carpeta de destino, que es de donde parte el módulo
+Ubicación.
+
+### 4. Destino y opciones
+
+La estructura que se crea es:
+
+```
+<destino>/
+  Fotos/Sony A6400/2026-08-09 - Concierto/JPG/20260809_224512.JPG
+  Fotos/Sony A6400/2026-08-09 - Concierto/RAW/20260809_224512.ARW
+  Videos/Sony A6400/20260809_231004.MP4
+```
+
+- **Renombrar por fecha de captura** — igual que en Conversión. Un RAW y su JPG siempre
+  reciben el mismo nombre base aunque acaben en carpetas distintas, así que siguen
+  emparejados. Se puede desactivar para conservar los nombres de la cámara.
+- **Agrupar también los vídeos por día** — por defecto los vídeos van directos a
+  `Videos/<cámara>/`, sin subcarpeta de día.
+- **Omitir lo ya importado antes** — si reinsertas la misma tarjeta, no se vuelve a copiar
+  nada. La comparación es por nombre, tamaño y momento exacto de captura.
+- **Verificar cada copia por checksum (SHA-256)** — relee lo copiado y lo compara con el
+  original.
+- **Borrar del origen una vez copiado y verificado** — solo se borra lo que se ha copiado
+  *y* verificado. Si falla un solo archivo, no se borra nada. Requiere la verificación
+  activada; sin ella la app se niega a borrar.
+- **Enviar al NAS al terminar** — encadena la subida a la importación.
+
+**Ver cómo quedará** muestra el árbol de carpetas exacto antes de copiar nada, y comprueba
+que hay espacio libre suficiente en el destino.
+
+### 5. Envío al NAS
+
+Synology **no publica una API de Synology Photos para aplicaciones de terceros**, así que
+la app usa **File Station**, que sí está documentada oficialmente por Synology: sube los
+archivos a la carpeta que Photos ya tiene indexada y Photos los indexa por su cuenta. Va
+por HTTPS con la cuenta de DSM y no hace falta activar el servicio FTP.
+
+En DSM 7 la carpeta es `/photo` (espacio compartido) o `/homes/<usuario>/Photos` (espacio
+personal, en plural). Como alternativa hay **SFTP** y **FTP/FTPS**, para NAS que no sean
+Synology.
+
+**Verificación en dos pasos.** Si la cuenta la tiene activada, al pulsar *Probar conexión*
+se te pide el código **en ese momento** — no se guarda, porque caduca en 30 segundos. Lo
+que sí se guarda es la autorización que devuelve el NAS a cambio, de forma que este equipo
+queda registrado como de confianza y no vuelve a pedírtelo. *Olvidar este equipo* la borra
+de aquí; para revocarla también en el NAS, quítala en DSM → Panel de control → Usuario →
+Avanzado.
+
+**Elegir la carpeta remota.** *Explorar…* abre un navegador de las carpetas del NAS: se
+empieza por las carpetas compartidas, se entra pinchando, hay un filtro por nombre y se
+pueden **crear carpetas nuevas** sin salir de ahí.
+
+Si una subida se corta a mitad, **Subir pendientes al NAS** reintenta solo lo que quedó
+sin subir, sin repetir la importación.
+
+> La contraseña se guarda en `~/.conversor-importador/config.json` con permisos de solo
+> lectura para tu usuario, y nunca se devuelve al navegador.
+
+## Ubicación
+
+Las cámaras sin GPS (la mayoría de réflex y sin espejo) no guardan dónde se tomó la foto,
+así que Synology Photos no las coloca en el mapa. Este módulo lo arregla después de la
+importación, apoyándose en el móvil, que sí lo guarda.
+
+### 1. Carpeta de la biblioteca
+
+La carpeta donde importas. Se lee el `.ubicaciones.json` que dejó la importación; si la
+carpeta viene de antes de que existiera este módulo, **Buscar archivos nuevos** lo
+construye leyendo el EXIF de todo. **Releer todo de cero** rehace el índice entero, para
+cuando se ha quedado desfasado.
+
+### 2. Sesiones detectadas
+
+Las fotos se agrupan en **sesiones por cercanía en el tiempo**, no solo por día: la
+secuencia que empieza a las 9:00 es una sesión, y si vuelves a disparar a las 11:00 eso ya
+es otra. El corte por defecto es una hora sin disparar, ajustable en pantalla.
+
+No se separa por cámara a propósito: si la cámara y el móvil disparan a la vez en el mismo
+sitio, caen en la misma sesión, que es justo lo que permite usar la posición del móvil para
+la cámara.
+
+Cada sesión muestra su franja horaria, cuántos archivos tiene con y sin ubicación, unas
+miniaturas para reconocerla, y un borde verde o rojo según esté resuelta. **Se pueden
+marcar varias sesiones a la vez** para asignarles la misma ubicación de una tacada.
+
+### 3. Deducir ubicación desde referencias
+
+Para cada sesión sin ubicación busca una referencia con GPS tomada a una hora cercana y
+propone su posición. Las referencias pueden venir de tres sitios, combinables:
+
+- **Las fotos que ya importaste y sí tienen GPS** — las del móvil, típicamente.
+- **Una carpeta cualquiera con fotos del móvil**, sin importarlas ni copiarlas: solo se
+  leen sus metadatos.
+- **Un track GPX** de un reloj, un móvil o un registrador. Da cobertura continua, así que
+  es lo más preciso.
+
+Cada propuesta dice de dónde salió y **con cuánta diferencia de tiempo** se dedujo, porque
+es una aproximación, no una medición. Si la sesión ya tenía alguna foto con GPS y la
+propuesta cae lejos de ella, se avisa en rojo.
+
+> **Sobre la hora del GPX**: los tracks guardan la hora en UTC y las cámaras la hora local
+> sin indicar zona. El campo «Desfase horario» viene con el de tu sistema; ajústalo si el
+> track se grabó en otro huso, o el track quedará desplazado varias horas.
+
+### 4. Asignar ubicación
+
+Lo que no se pueda deducir se elige a mano: busca un sitio por nombre (Plaza Nueva,
+Granada) o pincha directamente en el mapa. Los puntos grises son las sesiones que ya tienen
+posición; el rojo es la que estás eligiendo.
+
+**La ubicación se escribe dentro del archivo** (EXIF en fotos, metadatos del contenedor en
+vídeos), porque es lo único que Synology Photos lee. Es la única parte de toda la app que
+modifica los archivos originales, así que por defecto guarda una copia intacta en una
+subcarpeta `_originales_sin_gps/` y **Deshacer en las marcadas** la restaura.
+
+Tras escribir, cada archivo se relee para confirmar que la posición quedó realmente dentro:
+solo entonces se anota en el índice.
+
+> **Los clips AVCHD (`.MTS`) no admiten ubicación.** No es una limitación de la app: el
+> formato no tiene dónde guardar metadatos, y ninguna herramienta puede escribirlos. Las
+> sesiones que los contengan lo avisan en rojo. La solución es convertirlos a MP4 en el
+> módulo de **Conversión** (que es remuxeo sin pérdida, no recomprime) y asignar la
+> ubicación al MP4 resultante. Los MP4 y MOV sí funcionan con normalidad.
 
 ## Conversión
 

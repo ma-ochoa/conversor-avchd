@@ -1,0 +1,258 @@
+{% extends "_base.html" %}
+{% block title %}Importación — Conversor de vídeo{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='importacion.css') }}">
+{% endblock %}
+
+{% block page_header %}
+<h1>💾 Importación</h1>
+<p class="subtitle">Vuelca tarjetas de cámara (o carpetas ya copiadas al Escritorio) al disco,
+organizadas por cámara y por día, y envíalas al NAS.</p>
+{% endblock %}
+
+{% block content %}
+  <section id="source-section">
+    <h2>1. Origen</h2>
+    <div class="path-row">
+      <button id="detect-btn" class="primary">🔍 Detectar tarjetas</button>
+      <button id="pick-source-btn">📁 Elegir una carpeta…</button>
+      <span id="source-status" class="status-text"></span>
+    </div>
+    <p id="blocked-warning" class="hint warn hidden"></p>
+    <div id="phone-notice" class="phone-notice hidden"></div>
+
+    <div id="mtp-browser" class="mtp-browser hidden">
+      <div class="browser-head">
+        <button id="mtp-up-btn" type="button" title="Subir un nivel">⬆</button>
+        <span id="mtp-path" class="browser-path"></span>
+        <button id="mtp-close-btn" type="button">Cerrar</button>
+      </div>
+      <ul id="mtp-list" class="browser-list"></ul>
+
+      <div id="mtp-selection" class="mtp-selection hidden">
+        <p id="mtp-summary"></p>
+        <div class="controls-row">
+          <label>Desde
+            <input id="mtp-from" type="date">
+          </label>
+          <label>Hasta
+            <input id="mtp-to" type="date">
+          </label>
+          <label class="inline">
+            <input type="checkbox" id="mtp-skip-dup" checked> Omitir lo ya importado
+          </label>
+        </div>
+        <p id="mtp-filtered" class="muted"></p>
+        <button id="mtp-download-btn" class="primary">Descargar al disco</button>
+        <progress id="mtp-bar" class="hidden" max="1" value="0"></progress>
+        <span id="mtp-status" class="status-text"></span>
+      </div>
+    </div>
+    <ul id="source-list" class="source-list"></ul>
+    <p id="source-empty" class="muted hidden">
+      No se ha detectado ninguna tarjeta ni carpeta con fotos en el Escritorio o Descargas.
+      Inserta una tarjeta y vuelve a pulsar «Detectar tarjetas», o elige una carpeta a mano.
+    </p>
+  </section>
+
+  <section id="content-section" class="hidden">
+    <h2>2. Qué hay en el origen</h2>
+    <p id="scan-summary" class="muted"></p>
+    <div id="cameras"></div>
+  </section>
+
+  <section id="preview-section" class="hidden">
+    <h2>3. Vista rápida</h2>
+    <p class="muted">Las miniaturas se generan al ir apareciendo en pantalla, sin escribir nada en la tarjeta.</p>
+    <div class="preview-toolbar">
+      <label>Día
+        <select id="preview-day"><option value="all">Todos</option></select>
+      </label>
+      <label>Mostrar
+        <select id="preview-filter">
+          <option value="all">Todo</option>
+          <option value="jpg">Solo JPG</option>
+          <option value="raw">Solo RAW</option>
+          <option value="video">Solo vídeos</option>
+          <option value="nogps">Sin ubicación</option>
+        </select>
+      </label>
+      <span id="preview-count" class="muted"></span>
+    </div>
+    <div id="event-inline" class="event-inline hidden">
+      <label>Nombre del evento para <strong id="event-inline-day"></strong>
+        <input id="event-inline-input" type="text" placeholder="p. ej. Concierto Mago de Oz">
+      </label>
+      <p class="muted">Se aplica al mismo día de arriba; puedes escribirlo aquí mientras miras las fotos.</p>
+    </div>
+    <div id="preview-grid" class="preview-grid"></div>
+    <button id="preview-more" class="hidden">Mostrar más</button>
+  </section>
+
+  <section id="options-section" class="hidden">
+    <h2>4. Destino y opciones</h2>
+    <div class="path-row">
+      <input id="destination-input" type="text" placeholder="Carpeta de destino">
+      <button id="pick-dest-btn">📁 Cambiar…</button>
+    </div>
+    <p id="space-info" class="muted"></p>
+
+    <div class="options">
+      <label><input type="checkbox" id="opt-rename" checked> Renombrar por fecha de captura (AAAAMMDD_HHMMSS)</label>
+      <p class="hint">Si lo desactivas se conservan los nombres originales de la cámara (DSC00123.ARW).
+      En ambos casos un RAW y su JPG mantienen el mismo nombre base.</p>
+
+      <label><input type="checkbox" id="opt-group-videos"> Agrupar también los vídeos por día</label>
+      <p class="hint">Por defecto los vídeos van directos a <code>Vídeos/&lt;cámara&gt;/</code>, sin subcarpeta de día.</p>
+
+      <label><input type="checkbox" id="opt-skip-duplicates" checked> Omitir lo ya importado antes</label>
+      <p class="hint">Compara con el historial de importaciones para no volver a copiar lo mismo si reinsertas la tarjeta.</p>
+
+      <label><input type="checkbox" id="opt-verify" checked> Verificar cada copia por checksum (SHA-256)</label>
+      <p class="hint">Relee el archivo copiado y lo compara con el original. Tarda algo más, pero es lo único
+      que permite borrar de la tarjeta con garantías.</p>
+
+      <label><input type="checkbox" id="opt-delete"> Borrar del origen una vez copiado y verificado</label>
+      <p class="hint warn">Irreversible. Solo se borra lo que se ha copiado <em>y</em> verificado correctamente;
+      si falla un solo archivo, no se borra nada.</p>
+
+      <label><input type="checkbox" id="opt-upload"> Enviar al NAS al terminar la importación</label>
+      <p class="hint">Requiere la conexión configurada más abajo.</p>
+    </div>
+
+    <button id="plan-btn">Ver cómo quedará</button>
+    <span id="plan-status" class="status-text"></span>
+
+    <div id="plan-result" class="hidden block">
+      <h3>Estructura que se va a crear</h3>
+      <table id="plan-table">
+        <thead><tr><th>Carpeta</th><th>Archivos</th><th>Tamaño</th></tr></thead>
+        <tbody></tbody>
+      </table>
+      <p id="plan-totals" class="muted"></p>
+    </div>
+
+    <button id="import-btn" class="primary">5. Importar</button>
+  </section>
+
+  <section id="progress-section" class="hidden">
+    <h2>Progreso</h2>
+    <p id="phase-label" class="muted"></p>
+    <progress id="overall-bar" max="1" value="0"></progress>
+    <table id="progress-table">
+      <thead><tr><th>Archivo</th><th>Destino</th><th>Estado</th><th>Progreso</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="job-summary" class="muted"></p>
+    <ul id="job-warnings" class="warn-list"></ul>
+  </section>
+
+  <section id="nas-section">
+    <h2>Envío al NAS</h2>
+    <details id="nas-details">
+      <summary>Configurar conexión</summary>
+      <p class="muted">
+        Synology Photos no publica una API para aplicaciones de terceros, así que el envío
+        usa <strong>File Station</strong>, que sí está documentada oficialmente: se sube a la carpeta
+        que Photos ya tiene indexada y Photos las indexa por su cuenta. Va por HTTPS con tu cuenta
+        de DSM y admite verificación en dos pasos, sin necesidad de activar el servicio FTP en el NAS.
+      </p>
+      <p class="muted">
+        En <strong>DSM 7</strong> la carpeta es <code>/photo</code> para el espacio compartido, o
+        <code>/homes/&lt;usuario&gt;/Photos</code> para el espacio personal — en plural:
+        <code>/Photo</code> en singular era la de DSM 6 con Photo Station.
+      </p>
+
+      <div class="nas-form">
+        <label>Método
+          <select id="nas-method">
+            <option value="synology">Synology File Station (recomendado)</option>
+            <option value="sftp">SFTP</option>
+            <option value="ftps">FTP con TLS</option>
+            <option value="ftp">FTP</option>
+          </select>
+        </label>
+        <label>Servidor
+          <input id="nas-host" type="text" placeholder="192.168.1.10 o nas.local">
+        </label>
+        <label>Puerto
+          <input id="nas-port" type="number" placeholder="por defecto según el método">
+        </label>
+        <label>Usuario
+          <input id="nas-user" type="text" autocomplete="off">
+        </label>
+        <label>Contraseña
+          <input id="nas-password" type="password" autocomplete="off" placeholder="(sin cambios)">
+        </label>
+        <label>Carpeta remota
+          <span class="field-with-button">
+            <input id="nas-root" type="text" placeholder="/photo">
+            <button id="nas-browse-btn" type="button">Explorar…</button>
+          </span>
+        </label>
+        <label class="inline"><input type="checkbox" id="nas-https" checked> Usar HTTPS</label>
+        <label class="inline"><input type="checkbox" id="nas-verify-tls" checked> Verificar certificado TLS</label>
+      </div>
+      <p class="hint warn">La contraseña se guarda en <code>~/.conversor-importador/config.json</code>,
+      legible solo por tu usuario. No se envía nunca de vuelta al navegador.</p>
+
+      <div id="nas-device" class="device-state">
+        <span id="nas-device-text"></span>
+        <button id="nas-forget-btn" class="hidden">Olvidar este equipo</button>
+      </div>
+
+      <div class="path-row">
+        <button id="nas-save-btn" class="primary">Guardar</button>
+        <button id="nas-test-btn">Probar conexión</button>
+        <span id="nas-status" class="status-text"></span>
+      </div>
+
+      <div id="nas-browser" class="nas-browser hidden">
+        <div class="browser-head">
+          <button id="browser-up-btn" type="button" title="Subir un nivel">⬆</button>
+          <span id="browser-path" class="browser-path"></span>
+          <button id="browser-close-btn" type="button">Cerrar</button>
+        </div>
+        <input id="browser-filter" type="text" placeholder="Filtrar por nombre…">
+        <ul id="browser-list" class="browser-list"></ul>
+        <div class="browser-actions">
+          <input id="browser-new-name" type="text" placeholder="Nombre de la carpeta nueva">
+          <button id="browser-mkdir-btn" type="button">Crear aquí</button>
+          <button id="browser-use-btn" type="button" class="primary">Usar esta carpeta</button>
+        </div>
+        <p id="browser-status" class="status-text"></p>
+      </div>
+
+      <div id="nas-otp-row" class="otp-row hidden">
+        <label>Código de verificación en dos pasos
+          <input id="nas-otp" type="text" autocomplete="one-time-code" inputmode="numeric"
+                 maxlength="8" placeholder="123456">
+        </label>
+        <button id="nas-otp-btn" class="primary">Autorizar este equipo</button>
+        <p class="hint">El código caduca en 30 segundos, así que se pide ahora y
+        <strong>no se guarda</strong>. Lo que sí se guarda es la autorización que devuelve el NAS,
+        para no tener que pedírtelo cada vez.</p>
+      </div>
+    </details>
+
+    <div class="block">
+      <p id="pending-label" class="muted">—</p>
+      <button id="upload-pending-btn">Subir pendientes al NAS</button>
+      <span id="upload-status" class="status-text"></span>
+    </div>
+  </section>
+
+  <section id="history-section">
+    <h2>Últimas importaciones</h2>
+    <table id="history-table">
+      <thead><tr><th>Cuándo</th><th>Origen</th><th>Copiados</th><th>Borrados</th><th>Tamaño</th><th>NAS</th></tr></thead>
+      <tbody></tbody>
+    </table>
+    <p id="history-empty" class="muted">Todavía no hay ninguna importación registrada.</p>
+  </section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='importacion.js') }}"></script>
+{% endblock %}

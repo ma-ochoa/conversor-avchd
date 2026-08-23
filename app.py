@@ -4,6 +4,7 @@ y renombrar vídeos/fotos con su fecha y hora de captura."""
 import os
 import platform
 import subprocess
+import uuid
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, render_template, request, send_file
@@ -42,9 +43,51 @@ from converter.timeline_jobs import get_export_job, start_export
 from converter.analyze_jobs import get_analysis_job, start_analysis
 from converter.recompress_jobs import get_job as get_recompress_job, start_job as start_recompress_job
 
+from importer import geoindex, history as import_history
+from importer.config import load_config, public_config, save_config
+from importer.geomatch import (
+    DEFAULT_TOLERANCE_MINUTES,
+    match_groups,
+    references_from_folder,
+    references_from_index,
+)
+from importer.geowrite import restore as restore_original
+from importer.gpx import GpxError, default_utc_offset, load_gpx
+from importer.groups import DEFAULT_GAP_MINUTES, build_groups
+from importer.location_jobs import get_assign_job, start_assign, start_reindex
+from importer.places import PlacesError, reverse as reverse_place, search as search_places
+from importer.jobs import get_job as get_import_job, start_job as start_import_job
+from importer.media import scan_source
+from importer.nas import (
+    NasError,
+    NasOtpRequired,
+    create_folder as nas_create_folder,
+    list_folders as nas_list_folders,
+    test_connection,
+)
+from importer import mtp
+from importer.history import imported_keys
+from importer.mtp_jobs import (
+    cleanup as mtp_cleanup,
+    download_key as mtp_download_key,
+    get_job as get_mtp_job,
+    pending_downloads,
+    start_download as start_mtp_download,
+)
+from importer.phones import detect_phones, open_transfer_app
+from importer.nas_jobs import get_upload_job, start_upload
+from importer.plan import build_plan, free_space
+from importer.sources import describe_source, detect_sources
+from importer.thumbs import get_thumbnail
+
 app = Flask(__name__)
 
 _MEDIA_EXTS = {".mp4", ".mov", ".jpg", ".jpeg", ".png", ".gif"}
+
+# El escaneo de una tarjeta puede tener miles de ficheros: se guarda aquí y el navegador
+# solo maneja el identificador, en vez de reenviar el listado completo en cada paso.
+_scans: dict[str, dict] = {}
+_MAX_SCANS = 5
 
 
 @app.route("/")
@@ -509,6 +552,484 @@ def recompress_status(job_id):
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)
+
+
+@app.route("/importacion")
+def importacion_page():
+    return render_template("importacion.html", active="importacion")
+
+
+@app.route("/api/importacion/config", methods=["GET", "POST"])
+def importacion_config():
+    if request.method == "GET":
+        return jsonify(public_config())
+
+    updates = request.get_json(force=True)
+    nas = updates.get("nas")
+    if isinstance(nas, dict):
+        # El navegador nunca recibe las credenciales, así que tampoco las reenvía: una
+        # cadena vacía significa "deja la que ya había", no "bórrala".
+        for field in ("password", "otp"):
+            if not nas.get(field):
+                nas.pop(field, None)
+        nas.pop("has_password", None)
+        nas.pop("has_otp", None)
+    save_config(updates)
+    return jsonify(public_config())
+
+
+@app.route("/api/importacion/sources")
+def importacion_sources():
+    return jsonify(detect_sources(retry_blocked=request.args.get("retry") == "1"))
+
+
+@app.route("/api/importacion/scan", methods=["POST"])
+def importacion_scan():
+    data = request.get_json(force=True)
+    path = data.get("path", "")
+    if not path:
+        return jsonify({"error": "Falta el origen a escanear"}), 400
+
+    try:
+        source = describe_source(path)
+    except NotADirectoryError:
+        return jsonify({"error": f"No es una carpeta válida: {path}"}), 400
+
+    config = load_config()
+    imported = import_history.imported_keys() if config["skip_duplicates"] else set()
+    scan = scan_source(source["path"], config, already_imported=imported)
+
+    scan_id = uuid.uuid4().hex
+    _scans[scan_id] = scan
+    for stale in list(_scans)[:-_MAX_SCANS]:
+        _scans.pop(stale, None)
+
+    return jsonify({
+        "scan_id": scan_id,
+        "source": source,
+        "cameras": scan["cameras"],
+        "totals": scan["totals"],
+        "files": [
+            {k: f[k] for k in ("path", "name", "size", "category", "day", "camera_key",
+                               "capture_dt", "date_source", "duplicate", "gps")}
+            for f in scan["files"] if f["category"] != "sidecar"
+        ],
+        "free_bytes": free_space(config["destination"]),
+    })
+
+
+@app.route("/api/importacion/plan", methods=["POST"])
+def importacion_plan():
+    data = request.get_json(force=True)
+    scan = _scans.get(data.get("scan_id", ""))
+    if scan is None:
+        return jsonify({"error": "El escaneo ha caducado. Vuelve a escanear el origen."}), 404
+
+    config = load_config()
+    if data.get("destination"):
+        config["destination"] = data["destination"]
+
+    plan = build_plan(scan, config, data.get("camera_folders", {}),
+                      data.get("events", {}), data.get("options", {}))
+    return jsonify({
+        "destination": plan["destination"],
+        "tree": plan["tree"],
+        "totals": plan["totals"],
+        "free_bytes": free_space(plan["destination"]),
+        "preview": plan["items"][:40],
+    })
+
+
+@app.route("/api/importacion/start", methods=["POST"])
+def importacion_start():
+    data = request.get_json(force=True)
+    scan = _scans.get(data.get("scan_id", ""))
+    if scan is None:
+        return jsonify({"error": "El escaneo ha caducado. Vuelve a escanear el origen."}), 404
+
+    config = load_config()
+    if data.get("destination"):
+        config["destination"] = data["destination"]
+        save_config({"destination": data["destination"]})
+
+    options = data.get("options", {})
+    camera_folders = data.get("camera_folders", {})
+    plan = build_plan(scan, config, camera_folders, data.get("events", {}), options)
+    if not plan["items"]:
+        return jsonify({"error": "No hay nada que importar con las opciones elegidas."}), 400
+
+    available = free_space(plan["destination"])
+    if available is not None and available < plan["totals"]["bytes"]:
+        return jsonify({
+            "error": "No hay espacio suficiente en el destino: "
+                     f"hacen falta {plan['totals']['bytes'] / 1e9:.1f} GB y quedan {available / 1e9:.1f} GB."
+        }), 400
+
+    job_id = start_import_job(
+        scan["source"], plan["items"],
+        {**options, "destination": plan["destination"]},
+        camera_folders,
+    )
+    return jsonify({"job_id": job_id, "totals": plan["totals"]})
+
+
+@app.route("/api/importacion/status/<job_id>")
+def importacion_status(job_id):
+    job = get_import_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/importacion/thumb")
+def importacion_thumb():
+    path = request.args.get("path", "")
+    if not path:
+        abort(404)
+    try:
+        return send_file(get_thumbnail(path), conditional=True)
+    except Exception:
+        abort(404)
+
+
+@app.route("/api/importacion/history")
+def importacion_history():
+    return jsonify({
+        "runs": import_history.recent_runs(),
+        "pending_upload": import_history.pending_upload(),
+    })
+
+
+@app.route("/api/importacion/nas-test", methods=["POST"])
+def importacion_nas_test():
+    data = request.get_json(silent=True) or {}
+    settings = {**load_config()["nas"], **{k: v for k, v in data.items() if v not in ("", None)}}
+    try:
+        result = test_connection(settings)
+    except NasOtpRequired as exc:
+        # No es un fallo: el navegador tiene que pedir el código y reintentar. Va como
+        # `message` y no como `error` a propósito — el ayudante del frontend convierte
+        # cualquier `error` en una excepción, y esto no lo es.
+        return jsonify({"ok": False, "needs_otp": True, "message": str(exc)}), 200
+    except NasError as exc:
+        return jsonify({"ok": False, "error": str(exc)}), 400
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Error inesperado: {exc}"}), 400
+
+    # Si el NAS ha devuelto un token de dispositivo, se guarda: es lo que evita volver a
+    # pedir el código en los siguientes envíos.
+    device_id = result.pop("device_id", None)
+    if device_id and device_id != load_config()["nas"].get("device_id"):
+        config = load_config()
+        config["nas"]["device_id"] = device_id
+        save_config(config)
+        result["device_token_saved"] = True
+
+    return jsonify(result)
+
+
+@app.route("/api/importacion/nas-browse", methods=["POST"])
+def importacion_nas_browse():
+    data = request.get_json(force=True)
+    settings = {**load_config()["nas"], **{k: v for k, v in data.items()
+                                           if k != "path" and v not in ("", None)}}
+    try:
+        return jsonify(nas_list_folders(settings, data.get("path", "")))
+    except NasOtpRequired as exc:
+        return jsonify({"needs_otp": True, "message": str(exc)}), 200
+    except NasError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/importacion/nas-mkdir", methods=["POST"])
+def importacion_nas_mkdir():
+    data = request.get_json(force=True)
+    settings = {**load_config()["nas"], **{k: v for k, v in data.items()
+                                           if k not in ("parent", "name") and v not in ("", None)}}
+    try:
+        return jsonify(nas_create_folder(settings, data.get("parent", ""), data.get("name", "")))
+    except NasOtpRequired as exc:
+        return jsonify({"needs_otp": True, "message": str(exc)}), 200
+    except NasError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/importacion/phones")
+def importacion_phones():
+    # `detect_phones` mira el USB (rápido y siempre disponible); `mtp.detect` dice cuáles
+    # se pueden además abrir para leer sus carpetas.
+    usb = detect_phones()
+    readable = mtp.detect() if usb else []
+    return jsonify({
+        "phones": usb,
+        "readable": readable,
+        "mtp_available": mtp.available(),
+    })
+
+
+@app.route("/api/importacion/mtp/folder", methods=["POST"])
+def importacion_mtp_folder():
+    data = request.get_json(silent=True) or {}
+    try:
+        return jsonify(mtp.list_folder(data.get("path") or "/"))
+    except mtp.MtpError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+
+@app.route("/api/importacion/mtp/files", methods=["POST"])
+def importacion_mtp_files():
+    data = request.get_json(force=True)
+    path = data.get("path")
+    if not path:
+        return jsonify({"error": "Falta la carpeta del móvil."}), 400
+    try:
+        files = mtp.list_files(path)
+    except mtp.MtpError as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    known = imported_keys()
+    for entry in files:
+        entry["duplicate"] = mtp_download_key(entry) in known
+
+    return jsonify({
+        "path": path,
+        "files": files,
+        "totals": {
+            "files": len(files),
+            "photos": sum(1 for f in files if f["category"] == "photo"),
+            "videos": sum(1 for f in files if f["category"] == "video"),
+            "bytes": sum(f["size"] or 0 for f in files),
+            "duplicates": sum(1 for f in files if f["duplicate"]),
+        },
+    })
+
+
+@app.route("/api/importacion/mtp/download", methods=["POST"])
+def importacion_mtp_download():
+    data = request.get_json(force=True)
+    folder, entries = data.get("folder"), data.get("files", [])
+    if not folder or not entries:
+        return jsonify({"error": "Elige una carpeta y al menos un archivo."}), 400
+    job_id = start_mtp_download(folder, entries, bool(data.get("skip_duplicates", True)))
+    return jsonify({"job_id": job_id})
+
+
+@app.route("/api/importacion/mtp/status/<job_id>")
+def importacion_mtp_status(job_id):
+    job = get_mtp_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/importacion/mtp/pending")
+def importacion_mtp_pending():
+    return jsonify({"downloads": pending_downloads()})
+
+
+@app.route("/api/importacion/mtp/cleanup", methods=["POST"])
+def importacion_mtp_cleanup():
+    data = request.get_json(force=True)
+    return jsonify({"removed": mtp_cleanup(data.get("path", ""))})
+
+
+@app.route("/api/importacion/open-transfer-app", methods=["POST"])
+def importacion_open_transfer_app():
+    data = request.get_json(silent=True) or {}
+    ok, message = open_transfer_app(data.get("kind", "android"))
+    return jsonify({"ok": ok, "message": message}), (200 if ok else 400)
+
+
+@app.route("/api/importacion/nas-forget-device", methods=["POST"])
+def importacion_nas_forget_device():
+    """Olvida el token de dispositivo: el próximo envío volverá a pedir el código 2FA.
+
+    Solo lo borra de este equipo. Para revocarlo también en el NAS hay que quitarlo en
+    DSM → Panel de control → Usuario → Avanzado → dispositivos de confianza.
+    """
+    config = load_config()
+    config["nas"]["device_id"] = ""
+    save_config(config)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/importacion/nas-upload", methods=["POST"])
+def importacion_nas_upload():
+    pending = import_history.pending_upload()
+    if not pending:
+        return jsonify({"error": "No hay nada pendiente de subir al NAS."}), 400
+    return jsonify({"job_id": start_upload(pending), "total": len(pending)})
+
+
+@app.route("/api/importacion/nas-status/<job_id>")
+def importacion_nas_status(job_id):
+    job = get_upload_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/ubicacion")
+def ubicacion_page():
+    return render_template(
+        "ubicacion.html",
+        active="ubicacion",
+        default_gap=DEFAULT_GAP_MINUTES,
+        default_tolerance=DEFAULT_TOLERANCE_MINUTES,
+        default_utc_offset=default_utc_offset(),
+    )
+
+
+@app.route("/api/ubicacion/groups", methods=["POST"])
+def ubicacion_groups():
+    data = request.get_json(force=True)
+    root = Path(data.get("root") or load_config()["destination"]).expanduser()
+    if not root.is_dir():
+        return jsonify({"error": f"No es una carpeta válida: {root}"}), 400
+
+    index = geoindex.load_index(root)
+    groups = build_groups(index["files"], int(data.get("gap_minutes", DEFAULT_GAP_MINUTES)))
+    return jsonify({
+        "root": str(root),
+        "indexed": bool(index["files"]),
+        "stats": geoindex.stats(root),
+        "groups": groups,
+    })
+
+
+@app.route("/api/ubicacion/reindex", methods=["POST"])
+def ubicacion_reindex():
+    data = request.get_json(force=True)
+    root = Path(data.get("root") or load_config()["destination"]).expanduser()
+    if not root.is_dir():
+        return jsonify({"error": f"No es una carpeta válida: {root}"}), 400
+    return jsonify({"job_id": start_reindex(str(root), full=bool(data.get("full")))})
+
+
+@app.route("/api/ubicacion/match", methods=["POST"])
+def ubicacion_match():
+    data = request.get_json(force=True)
+    root = Path(data.get("root") or load_config()["destination"]).expanduser()
+    if not root.is_dir():
+        return jsonify({"error": f"No es una carpeta válida: {root}"}), 400
+
+    references = []
+    used = []
+    if data.get("use_index", True):
+        found = references_from_index(root)
+        references.extend(found)
+        used.append(f"{len(found)} archivos ya importados con ubicación")
+
+    folder = (data.get("reference_folder") or "").strip()
+    if folder:
+        try:
+            found = references_from_folder(folder)
+        except NotADirectoryError:
+            return jsonify({"error": f"No es una carpeta válida: {folder}"}), 400
+        references.extend(found)
+        used.append(f"{len(found)} archivos con ubicación en {Path(folder).name}")
+
+    gpx_path = (data.get("gpx_path") or "").strip()
+    if gpx_path:
+        try:
+            points = load_gpx(gpx_path, data.get("utc_offset"))
+        except GpxError as exc:
+            return jsonify({"error": str(exc)}), 400
+        references.extend(
+            {"dt": p["dt"], "gps": p["gps"], "label": Path(gpx_path).name, "origin": "gpx"}
+            for p in points
+        )
+        used.append(f"{len(points)} puntos del track {Path(gpx_path).name}")
+
+    groups = build_groups(
+        geoindex.load_index(root)["files"],
+        int(data.get("gap_minutes", DEFAULT_GAP_MINUTES)),
+    )
+    groups = match_groups(
+        groups, references, int(data.get("tolerance_minutes", DEFAULT_TOLERANCE_MINUTES))
+    )
+    return jsonify({
+        "groups": groups,
+        "references": len(references),
+        "used": used,
+        "matched": sum(1 for g in groups if g.get("suggestion")),
+    })
+
+
+@app.route("/api/ubicacion/assign", methods=["POST"])
+def ubicacion_assign():
+    data = request.get_json(force=True)
+    root = Path(data.get("root") or "").expanduser()
+    relatives = data.get("relatives", [])
+    gps = data.get("gps")
+
+    if not root.is_dir():
+        return jsonify({"error": f"No es una carpeta válida: {root}"}), 400
+    if not relatives or not gps or len(gps) != 2:
+        return jsonify({"error": "Falta la selección de archivos o la posición."}), 400
+
+    job_id = start_assign(
+        str(root), relatives, [float(gps[0]), float(gps[1])],
+        data.get("source", geoindex.SOURCE_MANUAL),
+        data.get("place", ""),
+        make_backup=bool(data.get("backup", True)),
+    )
+    return jsonify({"job_id": job_id, "total": len(relatives)})
+
+
+@app.route("/api/ubicacion/assign-status/<job_id>")
+def ubicacion_assign_status(job_id):
+    job = get_assign_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/ubicacion/restore", methods=["POST"])
+def ubicacion_restore():
+    data = request.get_json(force=True)
+    root = Path(data.get("root") or "").expanduser()
+    relatives = data.get("relatives", [])
+    if not root.is_dir() or not relatives:
+        return jsonify({"error": "Falta la carpeta o la selección."}), 400
+
+    restored = sum(1 for relative in relatives if restore_original(root / relative))
+    if restored:
+        geoindex.set_location(root, relatives, None, "", "")
+    return jsonify({"restored": restored, "total": len(relatives)})
+
+
+@app.route("/api/ubicacion/search")
+def ubicacion_search():
+    try:
+        return jsonify({"results": search_places(request.args.get("q", ""))})
+    except PlacesError as exc:
+        return jsonify({"error": str(exc)}), 502
+
+
+@app.route("/api/ubicacion/reverse")
+def ubicacion_reverse():
+    try:
+        lat = float(request.args.get("lat", ""))
+        lon = float(request.args.get("lon", ""))
+    except ValueError:
+        return jsonify({"error": "Coordenadas no válidas"}), 400
+    return jsonify({"name": reverse_place(lat, lon)})
+
+
+@app.route("/api/ubicacion/pick-gpx", methods=["POST"])
+def ubicacion_pick_gpx():
+    if platform.system() != "Darwin":
+        return jsonify({"error": "El selector nativo de archivos solo está disponible en macOS."}), 400
+
+    script = (
+        'POSIX path of (choose file with prompt "Selecciona un track GPX" '
+        'of type {"gpx", "xml"})'
+    )
+    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if result.returncode != 0:
+        return jsonify({"canceled": True})
+    return jsonify({"path": result.stdout.strip()})
 
 
 if __name__ == "__main__":

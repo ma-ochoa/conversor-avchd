@@ -1,0 +1,541 @@
+"""Envío de lo importado al NAS.
+
+Sobre la API de Synology Photos: **no existe una API pública para terceros**. Las
+llamadas `SYNO.Foto.*` que usa la app oficial solo están documentadas por ingeniería
+inversa de la comunidad, sin contrato estable entre versiones de DSM, así que construir
+sobre ellas rompería el envío en cualquier actualización del NAS.
+
+Lo que sí es oficial y documentado por Synology es **File Station** (`SYNO.FileStation.*`).
+Subir a la carpeta que Synology Photos ya tiene indexada (`/photo`, o `/homes/<usuario>/Photo`
+en espacios personales) hace que Photos indexe las fotos por su cuenta, que es exactamente
+el resultado buscado. Por eso ese es el método recomendado aquí, y va sobre HTTPS con la
+cuenta de DSM (compatible con 2FA), sin necesidad de activar el servicio FTP en el NAS.
+
+SFTP y FTP quedan como alternativas para NAS que no sean Synology o instalaciones donde
+File Station no esté disponible.
+"""
+
+import ftplib
+import platform
+import posixpath
+import ssl
+from pathlib import Path
+
+
+def _device_name() -> str:
+    """Nombre con el que este equipo aparece en la lista de dispositivos de confianza de
+    DSM. Se usa el del sistema para que sea reconocible al revisarla o revocarlo."""
+    return f"Conversor de vídeo ({platform.node() or 'equipo'})"
+
+DEFAULT_PORTS = {"synology": 5001, "synology_http": 5000, "sftp": 22, "ftp": 21, "ftps": 21}
+
+
+class NasError(RuntimeError):
+    pass
+
+
+class NasOtpRequired(NasError):
+    """La cuenta tiene 2FA y hace falta un código *en este momento*.
+
+    Se distingue del resto de errores porque la interfaz tiene que reaccionar pidiendo el
+    código, no mostrando un fallo. Un código TOTP vale 30 segundos: no tiene sentido
+    guardarlo en la configuración, hay que pedirlo cuando se va a usar.
+    """
+
+
+def _remote_path(remote_root: str, relative: str) -> str:
+    return posixpath.join(remote_root.rstrip("/"), Path(relative).as_posix())
+
+
+# ---------------------------------------------------------------- Synology File Station
+
+_SYNO_ERRORS = {
+    400: "Usuario o contraseña incorrectos.",
+    401: "La cuenta está deshabilitada en el NAS.",
+    402: "La cuenta no tiene permisos suficientes.",
+    403: "La cuenta tiene la verificación en dos pasos activada: hace falta el código OTP.",
+    404: "El código de verificación en dos pasos (OTP) no es correcto.",
+    407: "El acceso está bloqueado desde esta IP.",
+    408: "La contraseña ha caducado y debe cambiarse en DSM.",
+}
+
+
+def _syno_root(settings: dict) -> str:
+    scheme = "https" if settings.get("use_https", True) else "http"
+    port = settings.get("port") or (DEFAULT_PORTS["synology"] if scheme == "https" else DEFAULT_PORTS["synology_http"])
+    return f"{scheme}://{settings['host']}:{port}/webapi"
+
+
+def _syno_base(settings: dict) -> str:
+    return f"{_syno_root(settings)}/entry.cgi"
+
+
+# Versión máxima de cada API que este código sabe manejar. El NAS puede ofrecer versiones
+# más nuevas, pero pedir una que no conocemos cambiaría el formato de la respuesta.
+_KNOWN_MAX_VERSION = {
+    "SYNO.API.Auth": 6,
+    "SYNO.FileStation.List": 2,
+    "SYNO.FileStation.CreateFolder": 2,
+    "SYNO.FileStation.Upload": 2,
+}
+
+# Si `SYNO.API.Info` no responde, se usan estos valores: son los de DSM 7, el caso común.
+_FALLBACK = {name: {"version": version, "path": "entry.cgi"}
+             for name, version in _KNOWN_MAX_VERSION.items()}
+
+
+# El NAS pide un código 2FA: no es un fallo, es un paso más del login.
+_OTP_CODES = {403, 406}
+
+
+def _syno_check(payload: dict, context: str) -> dict:
+    if payload.get("success"):
+        return payload.get("data", {})
+    code = (payload.get("error") or {}).get("code")
+    if code in _OTP_CODES:
+        raise NasOtpRequired(_SYNO_ERRORS.get(code, "Hace falta el código de verificación."))
+    raise NasError(_SYNO_ERRORS.get(code, f"{context}: el NAS devolvió el error {code}."))
+
+
+def _redact(message: str, *secrets: str) -> str:
+    """Los errores de red de `requests` incluyen la URL completa de la petición, y ese
+    texto acaba en pantalla y en los logs. Sin esto, una credencial que viajara en la
+    query se filtraría en el mensaje de error."""
+    for secret in secrets:
+        if secret:
+            message = message.replace(secret, "***")
+    return message
+
+
+class _SynologySession:
+    def __init__(self, settings: dict):
+        try:
+            import requests
+        except ImportError as exc:
+            raise NasError(
+                "Falta la librería 'requests' para hablar con el NAS por File Station. "
+                "Instálala con: pip install requests"
+            ) from exc
+
+        self.requests = requests
+        self.settings = settings
+        self.root = _syno_root(settings)
+        self.url = _syno_base(settings)
+        self.session = requests.Session()
+        self.session.verify = bool(settings.get("verify_tls", True))
+        self.sid = None
+        self.device_id = None
+        self._created_dirs: set[str] = set()
+        self.apis = dict(_FALLBACK)
+
+    def discover(self) -> None:
+        """Pregunta al NAS qué versión de cada API soporta, antes de autenticarse.
+
+        Cada DSM admite un rango distinto (`SYNO.API.Auth` es la versión 6 en DSM 7 y la 3
+        en DSM 6), y pedir una fuera de rango no da un error claro: devuelve un código
+        genérico que se confunde con credenciales incorrectas. `SYNO.API.Info` no necesita
+        sesión, así que se consulta primero y se negocia la versión más alta que ambos
+        lados entienden. Si la consulta falla se sigue con los valores de DSM 7, que es lo
+        que había antes de negociar nada.
+        """
+        try:
+            response = self.session.get(
+                f"{self.root}/query.cgi",
+                params={
+                    "api": "SYNO.API.Info",
+                    "version": "1",
+                    "method": "query",
+                    "query": ",".join(_KNOWN_MAX_VERSION),
+                },
+                timeout=(10, 30),
+            )
+            payload = response.json()
+        except Exception:
+            return
+
+        if not payload.get("success"):
+            return
+
+        for name, info in (payload.get("data") or {}).items():
+            if name not in _KNOWN_MAX_VERSION:
+                continue
+            try:
+                lowest = int(info.get("minVersion", 1))
+                highest = int(info.get("maxVersion", 1))
+            except (TypeError, ValueError):
+                continue
+            # La más alta que soportan los dos; si el NAS es tan antiguo que ni su máxima
+            # llega a nuestra mínima, se usa la suya y que falle con su propio mensaje.
+            chosen = min(highest, _KNOWN_MAX_VERSION[name])
+            self.apis[name] = {
+                "version": max(chosen, lowest) if chosen < lowest else chosen,
+                # En DSM 6 el login vive en `auth.cgi`, no en `entry.cgi`.
+                "path": info.get("path") or "entry.cgi",
+            }
+
+    def api_version(self, name: str) -> str:
+        return str(self.apis.get(name, _FALLBACK[name])["version"])
+
+    def api_url(self, name: str) -> str:
+        return f"{self.root}/{self.apis.get(name, _FALLBACK[name])['path']}"
+
+    def post(self, data: dict, **kwargs):
+        """Todas las llamadas van por POST con los parámetros en el cuerpo: en la query
+        acabarían en el registro de accesos del NAS, credenciales incluidas."""
+        # Cada API puede vivir en un .cgi distinto según la versión de DSM.
+        url = self.api_url(data["api"]) if isinstance(data, dict) and "api" in data else self.url
+        try:
+            return self.session.post(url, data=data, timeout=(10, 120), **kwargs)
+        except self.requests.exceptions.SSLError as exc:
+            raise NasError(
+                "Error de certificado TLS. Si el NAS usa un certificado autofirmado, "
+                "desactiva «Verificar certificado» en la configuración."
+            ) from exc
+        except self.requests.exceptions.RequestException as exc:
+            detail = _redact(str(exc), self.settings.get("password", ""), self.settings.get("otp", ""))
+            raise NasError(f"No se pudo conectar con {self.settings['host']}: {detail}") from exc
+
+    def __enter__(self):
+        self.discover()
+        data = {
+            "api": "SYNO.API.Auth",
+            "version": self.api_version("SYNO.API.Auth"),
+            "method": "login",
+            "account": self.settings["user"],
+            "passwd": self.settings["password"],
+            "session": "FileStation",
+            "format": "sid",
+        }
+
+        otp = (self.settings.get("otp") or "").strip()
+        device_id = (self.settings.get("device_id") or "").strip()
+
+        if otp:
+            # Con un código válido se pide además que el NAS "confíe" en este equipo: la
+            # respuesta trae un `did` que en los siguientes logins sustituye al código.
+            # Es el mismo mecanismo que la casilla "recordar este dispositivo" de DSM.
+            data["otp_code"] = otp
+            data["enable_device_token"] = "yes"
+            data["device_name"] = self.settings.get("device_name") or _device_name()
+        elif device_id:
+            # Con el token guardado, el NAS no vuelve a pedir el segundo factor.
+            data["device_id"] = device_id
+
+        result = _syno_check(self.post(data).json(), "Inicio de sesión")
+        self.sid = result["sid"]
+        # Solo viene cuando se ha pedido enable_device_token, o sea en el login con código.
+        self.device_id = result.get("did") or device_id
+        return self
+
+    def __exit__(self, *_exc):
+        if self.sid:
+            try:
+                self.post({"api": "SYNO.API.Auth",
+                           "version": self.api_version("SYNO.API.Auth"),
+                           "method": "logout",
+                           "session": "FileStation", "_sid": self.sid})
+            except NasError:
+                pass
+        self.session.close()
+
+    def ensure_dir(self, remote_dir: str) -> None:
+        if remote_dir in self._created_dirs:
+            return
+        parent, _, name = remote_dir.rstrip("/").rpartition("/")
+        payload = self.post({
+            "api": "SYNO.FileStation.CreateFolder",
+            "version": self.api_version("SYNO.FileStation.CreateFolder"), "method": "create",
+            "folder_path": parent or "/", "name": name, "force_parent": "true", "_sid": self.sid,
+        }).json()
+        # 408/1100 = "ya existe": no es un fallo, es el caso normal en la segunda importación.
+        if not payload.get("success") and (payload.get("error") or {}).get("code") not in (408, 1100):
+            _syno_check(payload, f"Crear la carpeta {remote_dir}")
+        self._created_dirs.add(remote_dir)
+
+    def upload(self, local: Path, remote_dir: str, filename: str) -> None:
+        self.ensure_dir(remote_dir)
+        with open(local, "rb") as handle:
+            # El binario tiene que ser la última parte del multipart: es un requisito de
+            # la API de File Station, no una preferencia.
+            parts = [
+                ("api", (None, "SYNO.FileStation.Upload")),
+                ("version", (None, self.api_version("SYNO.FileStation.Upload"))),
+                ("method", (None, "upload")),
+                ("_sid", (None, self.sid)),
+                ("path", (None, remote_dir)),
+                ("create_parents", (None, "true")),
+                ("overwrite", (None, "skip")),
+                ("file", (filename, handle, "application/octet-stream")),
+            ]
+            try:
+                response = self.session.post(
+                    self.api_url("SYNO.FileStation.Upload"), files=parts, timeout=(10, None)
+                )
+            except self.requests.exceptions.RequestException as exc:
+                detail = _redact(str(exc), self.settings.get("password", ""))
+                raise NasError(f"Error subiendo {filename}: {detail}") from exc
+        _syno_check(response.json(), f"Subir {filename}")
+
+
+def _upload_synology(files: list[tuple[Path, str]], settings: dict, progress_cb) -> None:
+    remote_root = settings.get("remote_root", "/photo")
+    with _SynologySession(settings) as session:
+        for index, (local, relative) in enumerate(files, start=1):
+            remote = _remote_path(remote_root, relative)
+            session.upload(local, posixpath.dirname(remote), posixpath.basename(remote))
+            if progress_cb:
+                progress_cb(index, relative)
+
+
+# ------------------------------------------------------------------------------- SFTP
+
+def _upload_sftp(files: list[tuple[Path, str]], settings: dict, progress_cb) -> None:
+    try:
+        import paramiko
+    except ImportError as exc:
+        raise NasError(
+            "Falta la librería 'paramiko' para subir por SFTP. Instálala con: pip install paramiko"
+        ) from exc
+
+    port = settings.get("port") or DEFAULT_PORTS["sftp"]
+    client = paramiko.SSHClient()
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    try:
+        client.connect(settings["host"], port=port, username=settings["user"],
+                       password=settings["password"], timeout=30)
+    except Exception as exc:
+        raise NasError(f"No se pudo conectar por SFTP a {settings['host']}: {_redact(str(exc), settings.get('password', ''))}") from exc
+
+    try:
+        sftp = client.open_sftp()
+        made: set[str] = set()
+        remote_root = settings.get("remote_root", "/photo")
+        for index, (local, relative) in enumerate(files, start=1):
+            remote = _remote_path(remote_root, relative)
+            _sftp_makedirs(sftp, posixpath.dirname(remote), made)
+            sftp.put(str(local), remote)
+            if progress_cb:
+                progress_cb(index, relative)
+        sftp.close()
+    finally:
+        client.close()
+
+
+def _sftp_makedirs(sftp, remote_dir: str, made: set[str]) -> None:
+    if remote_dir in made or remote_dir in ("/", ""):
+        return
+    _sftp_makedirs(sftp, posixpath.dirname(remote_dir), made)
+    try:
+        sftp.stat(remote_dir)
+    except FileNotFoundError:
+        sftp.mkdir(remote_dir)
+    made.add(remote_dir)
+
+
+# -------------------------------------------------------------------------- FTP / FTPS
+
+def _ftp_connect(settings: dict):
+    port = settings.get("port") or DEFAULT_PORTS["ftp"]
+    if settings["method"] == "ftps":
+        context = ssl.create_default_context()
+        if not settings.get("verify_tls", True):
+            context.check_hostname = False
+            context.verify_mode = ssl.CERT_NONE
+        ftp = ftplib.FTP_TLS(context=context)
+    else:
+        ftp = ftplib.FTP()
+
+    ftp.connect(settings["host"], port, timeout=30)
+    ftp.login(settings["user"], settings["password"])
+    if isinstance(ftp, ftplib.FTP_TLS):
+        ftp.prot_p()
+    ftp.set_pasv(True)
+    return ftp
+
+
+def _upload_ftp(files: list[tuple[Path, str]], settings: dict, progress_cb) -> None:
+    try:
+        ftp = _ftp_connect(settings)
+    except ftplib.all_errors as exc:
+        raise NasError(f"No se pudo conectar por FTP a {settings['host']}: {_redact(str(exc), settings.get('password', ''))}") from exc
+
+    try:
+        made: set[str] = set()
+        remote_root = settings.get("remote_root", "/photo")
+        for index, (local, relative) in enumerate(files, start=1):
+            remote = _remote_path(remote_root, relative)
+            _ftp_makedirs(ftp, posixpath.dirname(remote), made)
+            with open(local, "rb") as handle:
+                ftp.storbinary(f"STOR {remote}", handle, blocksize=1024 * 1024)
+            if progress_cb:
+                progress_cb(index, relative)
+    finally:
+        try:
+            ftp.quit()
+        except ftplib.all_errors:
+            ftp.close()
+
+
+def _ftp_makedirs(ftp, remote_dir: str, made: set[str]) -> None:
+    if remote_dir in made or remote_dir in ("/", ""):
+        return
+    _ftp_makedirs(ftp, posixpath.dirname(remote_dir), made)
+    try:
+        ftp.mkd(remote_dir)
+    except ftplib.error_perm:
+        pass  # Ya existe: es el caso normal a partir de la segunda importación.
+    made.add(remote_dir)
+
+
+# ----------------------------------------------------------------------------- Público
+
+_BACKENDS = {
+    "synology": _upload_synology,
+    "sftp": _upload_sftp,
+    "ftp": _upload_ftp,
+    "ftps": _upload_ftp,
+}
+
+
+def upload_files(files: list[tuple[Path, str]], settings: dict, progress_cb=None) -> None:
+    """Sube [(ruta local, ruta relativa al destino)] replicando la estructura en el NAS."""
+    if not settings.get("host") or not settings.get("user"):
+        raise NasError("Faltan los datos de conexión del NAS (servidor y usuario).")
+
+    backend = _BACKENDS.get(settings.get("method", "synology"))
+    if backend is None:
+        raise NasError(f"Método de envío desconocido: {settings.get('method')}")
+    backend(files, settings, progress_cb)
+
+
+def list_folders(settings: dict, path: str = "") -> dict:
+    """Subcarpetas de `path` en el NAS. Con `path` vacío devuelve las carpetas compartidas.
+
+    Las compartidas son la raíz de verdad de un Synology: no existe un "/" que se pueda
+    listar como en un sistema de ficheros normal, hay que pedirlas con `list_share`.
+    """
+    method = settings.get("method", "synology")
+    path = (path or "").strip()
+
+    if method != "synology":
+        raise NasError(
+            "Explorar carpetas remotas solo está disponible con Synology File Station. "
+            "Con SFTP o FTP, escribe la ruta a mano."
+        )
+
+    with _SynologySession(settings) as session:
+        common = {"_sid": session.sid, "additional": ""}
+        if not path or path == "/":
+            data = _syno_check(session.post({
+                "api": "SYNO.FileStation.List",
+                "version": session.api_version("SYNO.FileStation.List"),
+                "method": "list_share", "limit": "200", **common,
+            }).json(), "Listar carpetas compartidas")
+            entries = data.get("shares", [])
+        else:
+            data = _syno_check(session.post({
+                "api": "SYNO.FileStation.List",
+                "version": session.api_version("SYNO.FileStation.List"),
+                "method": "list", "folder_path": path,
+                "filetype": "dir", "limit": "500", **common,
+            }).json(), f"Listar {path}")
+            entries = data.get("files", [])
+
+    folders = sorted(
+        ({"name": e.get("name", ""), "path": e.get("path", "")} for e in entries if e.get("path")),
+        key=lambda f: f["name"].lower(),
+    )
+    parent = "" if not path or path == "/" else posixpath.dirname(path.rstrip("/"))
+    return {"path": path, "parent": parent if parent != path else "", "folders": folders}
+
+
+def create_folder(settings: dict, parent: str, name: str) -> dict:
+    """Crea una carpeta en el NAS y devuelve su ruta completa."""
+    if settings.get("method", "synology") != "synology":
+        raise NasError("Crear carpetas remotas solo está disponible con Synology File Station.")
+
+    name = (name or "").strip().strip("/")
+    if not name:
+        raise NasError("Escribe un nombre para la carpeta.")
+    # Los separadores dentro del nombre crearían una jerarquía inesperada a partir de un
+    # descuido al teclear.
+    if "/" in name or name in (".", ".."):
+        raise NasError("El nombre de la carpeta no puede contener «/».")
+    if not parent:
+        raise NasError(
+            "No se pueden crear carpetas compartidas desde aquí. Entra primero en una "
+            "carpeta compartida del NAS."
+        )
+
+    with _SynologySession(settings) as session:
+        payload = session.post({
+            "api": "SYNO.FileStation.CreateFolder",
+            "version": session.api_version("SYNO.FileStation.CreateFolder"),
+            "method": "create", "folder_path": parent, "name": name,
+            "force_parent": "false", "_sid": session.sid,
+        }).json()
+        if not payload.get("success") and (payload.get("error") or {}).get("code") in (408, 1100):
+            raise NasError(f"Ya existe una carpeta llamada «{name}» ahí.")
+        _syno_check(payload, f"Crear la carpeta {name}")
+
+    return {"path": posixpath.join(parent.rstrip("/"), name)}
+
+
+def test_connection(settings: dict) -> dict:
+    """Comprueba credenciales y acceso a la carpeta remota, sin subir nada."""
+    method = settings.get("method", "synology")
+    remote_root = settings.get("remote_root", "/photo")
+
+    if method == "synology":
+        with _SynologySession(settings) as session:
+            _syno_check(session.post({
+                "api": "SYNO.FileStation.List",
+                "version": session.api_version("SYNO.FileStation.List"), "method": "list",
+                "folder_path": remote_root, "limit": "1", "_sid": session.sid,
+            }).json(), f"Leer la carpeta {remote_root}")
+            # Se informa de la versión negociada: si algún día falla la subida en un DSM
+            # concreto, esto dice de entrada con qué versión se estaba hablando.
+            negotiated = session.api_version("SYNO.API.Auth")
+            device_id = session.device_id
+            remembered = bool(settings.get("otp")) and bool(device_id)
+
+        return {
+            "ok": True,
+            "message": (
+                f"Conexión correcta. La carpeta {remote_root} es accesible "
+                f"(API de autenticación versión {negotiated})."
+                + (" Este equipo queda registrado como de confianza: no volverá a pedirte "
+                   "el código de verificación." if remembered else "")
+            ),
+            # Quien llama decide si lo guarda; `nas.py` no toca la configuración.
+            "device_id": device_id,
+        }
+
+    if method == "sftp":
+        try:
+            import paramiko
+        except ImportError as exc:
+            raise NasError(
+                "Falta la librería 'paramiko' para SFTP. Instálala con: pip install paramiko"
+            ) from exc
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        try:
+            client.connect(settings["host"], port=settings.get("port") or DEFAULT_PORTS["sftp"],
+                           username=settings["user"], password=settings["password"], timeout=30)
+            sftp = client.open_sftp()
+            sftp.listdir(remote_root)
+            sftp.close()
+        except Exception as exc:
+            raise NasError(f"SFTP: {_redact(str(exc), settings.get('password', ''))}") from exc
+        finally:
+            client.close()
+        return {"ok": True, "message": f"Conexión SFTP correcta. La carpeta {remote_root} es accesible."}
+
+    try:
+        ftp = _ftp_connect(settings)
+        ftp.cwd(remote_root)
+        ftp.quit()
+    except ftplib.all_errors as exc:
+        raise NasError(f"FTP: {_redact(str(exc), settings.get('password', ''))}") from exc
+    return {"ok": True, "message": f"Conexión FTP correcta. La carpeta {remote_root} es accesible."}

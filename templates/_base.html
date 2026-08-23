@@ -11,6 +11,12 @@
 <div class="app-shell">
   <nav class="sidebar">
     <div class="sidebar-brand">🎞️ Conversor de vídeo</div>
+    <a class="sidebar-link {{ 'active' if active == 'importacion' else '' }}" href="/importacion">
+      <span class="sidebar-icon">💾</span> Importación
+    </a>
+    <a class="sidebar-link {{ 'active' if active == 'ubicacion' else '' }}" href="/ubicacion">
+      <span class="sidebar-icon">📍</span> Ubicación
+    </a>
     <a class="sidebar-link {{ 'active' if active == 'conversion' else '' }}" href="/">
       <span class="sidebar-icon">📼</span> Conversión
     </a>

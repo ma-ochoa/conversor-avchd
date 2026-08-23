@@ -1,3 +1,17 @@
 Flask>=3.0
+
+# Estabilización avanzada (seguimiento de objeto, extracción de fotogramas).
 numpy>=1.26
 Pillow>=10.0
+
+# Envío al NAS. Solo hacen falta si se usa esa función:
+#   requests -> Synology File Station (método recomendado)
+#   paramiko -> SFTP
+# FTP/FTPS no necesitan nada: van con ftplib de la biblioteca estándar.
+requests>=2.31
+paramiko>=3.4
+
+# Lectura de móviles Android/iPhone por MTP (módulo de Importación).
+# Necesita antes la librería del sistema:  brew install libgphoto2
+# Es opcional: sin ella, el resto de la app funciona igual y el móvil solo se detecta.
+gphoto2>=2.5
