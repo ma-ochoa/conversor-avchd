@@ -37,7 +37,13 @@ def _target_dir(file_entry: dict, camera_folder: str, day_name: str, config: dic
     if file_entry["category"] == "raw":
         parts.append(config["raw_dir_name"])
     else:
-        parts.append(config["jpg_dir_name"])
+        # Las fotos normales van directas a la carpeta del día. Solo los RAW se apartan,
+        # que es lo que de verdad conviene separar: meter los JPG en su propia subcarpeta
+        # añadía un nivel que no aporta nada cuando, además, es el caso habitual.
+        # `jpg_dir_name` vacío (lo normal) significa "sin subcarpeta".
+        subfolder = (config.get("jpg_dir_name") or "").strip()
+        if subfolder:
+            parts.append(subfolder)
     return Path(*parts)
 
 

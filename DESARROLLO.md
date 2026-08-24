@@ -868,7 +868,28 @@ carpeta de origen que se escanea.
     de la foto entera, lo que hace viable la vista rápida sobre un origen MTP sin
     descargar nada. Se cachean en disco como las demás
     (`thumbs.py::get_phone_thumbnail`), así que solo se piden una vez.
-44. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+44. **`CreateFolder` devuelve 400 si la carpeta ya existe**, no un código de "ya existe".
+    Es el peor caso posible para el que reintenta: en la segunda pasada sobre las mismas
+    carpetas, el error inofensivo y uno legítimo son el mismo número, así que enumerar
+    códigos (se probó con 408 y 1100) no sirve. Y como `ensure_dir` abortaba ahí, **una
+    subida reanudada moría en el primer fichero** justo cuando todas las carpetas ya
+    estaban creadas. Ahora su fallo no es fatal: la propia subida lleva
+    `create_parents=true` y crea lo que falte — comprobado contra el NAS real, con la
+    creación fallando en 400 y la subida del mismo fichero funcionando a continuación.
+45. **Marcar lo subido al final del job rompe la reanudación.** `mark_uploaded` se
+    llamaba una vez, al terminar `upload_files`. Si la subida se cortaba a la mitad —red,
+    cierre de la app, un error cualquiera— el registro quedaba **en cero** y la siguiente
+    vez volvía a subirlo todo desde el principio, aunque hubiera cientos de ficheros ya en
+    el NAS. Ahora se marca por lotes de 25 según avanza, y con un `finally` para que lo
+    que sí llegó quede registrado pase lo que pase.
+46. **Las fotos normales ya no van en subcarpeta `JPG/`.** Solo los RAW se apartan, que es
+    lo que interesa separar; meter el caso habitual en su propio nivel no aportaba nada.
+    `jpg_dir_name` vacío significa "sin subcarpeta", y `config.py::_migrate()` convierte
+    el `"JPG"` de las configuraciones anteriores. **Ojo al cambiar la estructura con
+    material ya subido al NAS**: hay que reorganizar los dos lados y, sobre todo,
+    actualizar `dest`/`dest_relative` en el historial, o la subida buscará los ficheros
+    donde ya no están.
+47. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la

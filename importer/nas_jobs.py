@@ -44,16 +44,35 @@ def get_upload_job(job_id: str) -> dict | None:
 def _run(job_id: str, entries: list[dict]) -> None:
     job = _jobs[job_id]
     try:
+        # Se marca **fichero a fichero, según se sube**, no todo al final. Marcarlo al
+        # final significaba que una subida cortada a la mitad —red, cierre de la app, un
+        # error cualquiera— dejaba en cero el registro y volvía a subirlo todo desde el
+        # principio, aunque ya hubiera cientos de archivos en el NAS.
+        por_relativa = {e["dest_relative"]: e["dest"] for e in entries}
+        subidos: list[str] = []
+
         def progress_cb(done, current):
             job["done"] = done
             job["current"] = current
+            dest = por_relativa.get(current)
+            if dest:
+                subidos.append(dest)
+                # En lotes, para no reescribir el historial entero por cada foto.
+                if len(subidos) >= 25:
+                    history.mark_uploaded(subidos)
+                    subidos.clear()
 
-        upload_files(
-            [(Path(e["dest"]), e["dest_relative"]) for e in entries],
-            load_config()["nas"],
-            progress_cb=progress_cb,
-        )
-        history.mark_uploaded([e["dest"] for e in entries])
+        try:
+            upload_files(
+                [(Path(e["dest"]), e["dest_relative"]) for e in entries],
+                load_config()["nas"],
+                progress_cb=progress_cb,
+            )
+        finally:
+            # Pase lo que pase, lo que sí llegó al NAS queda registrado.
+            if subidos:
+                history.mark_uploaded(subidos)
+
         job["state"] = "finalizado"
     except NasOtpRequired:
         # Una subida corre en segundo plano, sin nadie mirando: no se puede pedir aquí un

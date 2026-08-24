@@ -300,17 +300,29 @@ class _SynologySession:
         self.session.close()
 
     def ensure_dir(self, remote_dir: str) -> None:
+        """Intenta crear la carpeta remota, **sin que su fallo sea fatal**.
+
+        Crear una carpeta que ya existe devuelve `400` («parámetro no válido»), no un
+        código de "ya existe" — así que enumerar códigos no vale: en la segunda pasada
+        sobre las mismas carpetas, un error legítimo y uno inofensivo son el mismo número.
+        Y abortar ahí rompía justo la reanudación de una subida a medias, que es cuando
+        las carpetas ya están todas creadas.
+
+        No hace falta ser estricto: la propia subida va con `create_parents=true` y crea
+        lo que falte. Esto es solo un adelanto para que el árbol aparezca ordenado.
+        """
         if remote_dir in self._created_dirs:
             return
         parent, _, name = remote_dir.rstrip("/").rpartition("/")
-        payload = self.post({
-            "api": "SYNO.FileStation.CreateFolder",
-            "version": self.api_version("SYNO.FileStation.CreateFolder"), "method": "create",
-            "folder_path": parent or "/", "name": name, "force_parent": "true", "_sid": self.sid,
-        }).json()
-        # 408/1100 = "ya existe": no es un fallo, es el caso normal en la segunda importación.
-        if not payload.get("success") and (payload.get("error") or {}).get("code") not in (408, 1100):
-            _syno_check(payload, f"Crear la carpeta {remote_dir}", "SYNO.FileStation.CreateFolder")
+        try:
+            self.post({
+                "api": "SYNO.FileStation.CreateFolder",
+                "version": self.api_version("SYNO.FileStation.CreateFolder"),
+                "method": "create", "folder_path": parent or "/", "name": name,
+                "force_parent": "true", "_sid": self.sid,
+            })
+        except NasError:
+            pass
         self._created_dirs.add(remote_dir)
 
     def upload(self, local: Path, remote_dir: str, filename: str, _retry: bool = True) -> None:

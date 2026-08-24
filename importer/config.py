@@ -38,7 +38,9 @@ DEFAULTS = {
     "destination": str(Path.home() / "Pictures" / "Importaciones"),
     "photos_dir_name": "Fotos",
     "videos_dir_name": "Videos",
-    "jpg_dir_name": "JPG",
+    # Vacío = las fotos normales van directas a la carpeta del día, sin subcarpeta. Solo
+    # los RAW se apartan, que es lo que interesa separar de verdad.
+    "jpg_dir_name": "",
     "raw_dir_name": "RAW",
     "group_videos_by_day": False,
     "rename_by_date": True,
@@ -69,6 +71,10 @@ def _migrate(config: dict) -> dict:
     deja una credencial parada sin ninguna utilidad. Lo sustituye `device_id`."""
     for key in _RETIRED_NAS_KEYS:
         config.get("nas", {}).pop(key, None)
+    # Las fotos normales ya no van en subcarpeta: una configuración anterior con "JPG"
+    # guardado seguiría creándola.
+    if config.get("jpg_dir_name") == "JPG":
+        config["jpg_dir_name"] = ""
     return config
 
 

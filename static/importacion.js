@@ -418,6 +418,11 @@ function applyRange(check) {
   }
   el("plan-result").classList.add("hidden");
   updateRangeSummary();
+  // La vista rápida enseña lo que se va a importar, así que sigue al rango.
+  if (scan) {
+    fillDaySelector(scan.cameras);
+    applyPreviewFilters();
+  }
 }
 
 function updateRangeSummary() {
@@ -566,15 +571,24 @@ function focusDay(key) {
 
 function fillDaySelector(cameras) {
   const select = el("preview-day");
+  const previous = select.value;
+  const rangeActive = !el("range-filter").classList.contains("hidden");
+  const from = rangeActive ? el("range-from").value : "";
+  const to = rangeActive ? el("range-to").value : "";
+
   select.innerHTML = "";
   select.appendChild(new Option("Todos los días", "all"));
   for (const camera of cameras) {
     const name = camera.folder || camera.suggested || "Sin identificar";
     for (const day of camera.days) {
+      // Fuera del rango no se ofrece: son días que no se van a importar.
+      if ((from && day.date < from) || (to && day.date > to)) continue;
       const label = `${formatDay(day.date)} — ${name} (${day.photos + day.videos})`;
       select.appendChild(new Option(label, `${camera.key}|${day.date}`));
     }
   }
+  // Si el día que estaba elegido ha quedado fuera del rango, se vuelve a "todos".
+  select.value = Array.from(select.options).some((o) => o.value === previous) ? previous : "all";
 }
 
 function cameraFolders() {
@@ -624,7 +638,15 @@ const thumbObserver = new IntersectionObserver((entries) => {
 function filteredFiles() {
   const kind = el("preview-filter").value;
   const day = el("preview-day").value;
+  // La vista rápida sirve para decidir qué importar, así que tiene que enseñar lo mismo
+  // que se va a importar: si el rango de fechas acota los días, aquí también.
+  const rangeActive = !el("range-filter").classList.contains("hidden");
+  const from = rangeActive ? el("range-from").value : "";
+  const to = rangeActive ? el("range-to").value : "";
+
   return scan.files.filter((f) => {
+    if (from && f.day < from) return false;
+    if (to && f.day > to) return false;
     if (day !== "all" && `${f.camera_key}|${f.day}` !== day) return false;
     if (kind === "all") return true;
     if (kind === "nogps") return !f.gps;

@@ -243,10 +243,13 @@ La estructura que se crea es:
 
 ```
 <destino>/
-  Fotos/Sony A6400/2026-08-09 - Concierto/JPG/20260809_224512.JPG
+  Fotos/Sony A6400/2026-08-09 - Concierto/20260809_224512.JPG
   Fotos/Sony A6400/2026-08-09 - Concierto/RAW/20260809_224512.ARW
   Videos/Sony A6400/20260809_231004.MP4
 ```
+
+Las fotos van directas a la carpeta del día. **Solo los RAW se apartan** en su propia
+subcarpeta, que es lo que de verdad conviene separar.
 
 - **Renombrar por fecha de captura** — igual que en Conversión. Un RAW y su JPG siempre
   reciben el mismo nombre base aunque acaben en carpetas distintas, así que siguen
