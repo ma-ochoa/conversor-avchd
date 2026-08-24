@@ -246,6 +246,16 @@ class _SynologySession:
 
     def __enter__(self):
         self.discover()
+        self.login()
+        return self
+
+    def relogin(self) -> None:
+        """Rehace la sesión. El token de dispositivo evita volver a pedir el código 2FA,
+        que en mitad de una subida en segundo plano no habría a quién pedírselo."""
+        self.sid = None
+        self.login()
+
+    def login(self) -> None:
         data = {
             "api": "SYNO.API.Auth",
             "version": self.api_version("SYNO.API.Auth"),
@@ -274,7 +284,9 @@ class _SynologySession:
         self.sid = result["sid"]
         # Solo viene cuando se ha pedido enable_device_token, o sea en el login con código.
         self.device_id = result.get("did") or device_id
-        return self
+        # Algunas rutas de DSM identifican la sesión por cookie en vez de por el `_sid`
+        # del cuerpo; ponerla es gratis y cubre ese caso.
+        self.session.cookies.set("id", self.sid)
 
     def __exit__(self, *_exc):
         if self.sid:
@@ -301,7 +313,7 @@ class _SynologySession:
             _syno_check(payload, f"Crear la carpeta {remote_dir}", "SYNO.FileStation.CreateFolder")
         self._created_dirs.add(remote_dir)
 
-    def upload(self, local: Path, remote_dir: str, filename: str) -> None:
+    def upload(self, local: Path, remote_dir: str, filename: str, _retry: bool = True) -> None:
         self.ensure_dir(remote_dir)
         with open(local, "rb") as handle:
             # El binario tiene que ser la última parte del multipart: es un requisito de
@@ -318,12 +330,27 @@ class _SynologySession:
             ]
             try:
                 response = self.session.post(
-                    self.api_url("SYNO.FileStation.Upload"), files=parts, timeout=(10, None)
+                    self.api_url("SYNO.FileStation.Upload"),
+                    # **El `_sid` va además en la query.** En una petición multipart DSM
+                    # no lo lee de forma fiable del cuerpo y responde 119 («sesión no
+                    # válida») aunque el login acabe de funcionar y `ensure_dir` —que va
+                    # por POST normal— haya ido bien un instante antes.
+                    params={"_sid": self.sid},
+                    files=parts, timeout=(10, None),
                 )
             except self.requests.exceptions.RequestException as exc:
                 detail = _redact(str(exc), self.settings.get("password", ""))
                 raise NasError(f"Error subiendo {filename}: {detail}") from exc
-        _syno_check(response.json(), f"Subir {filename}", "SYNO.FileStation.Upload")
+
+        payload = response.json()
+        code = (payload.get("error") or {}).get("code")
+        # Una subida larga puede agotar la sesión por el camino: se rehace una vez y se
+        # reintenta, en vez de dar por perdido todo lo que quedaba.
+        if not payload.get("success") and code in (105, 106, 119) and _retry:
+            self.relogin()
+            return self.upload(local, remote_dir, filename, _retry=False)
+
+        _syno_check(payload, f"Subir {filename}", "SYNO.FileStation.Upload")
 
 
 def _upload_synology(files: list[tuple[Path, str]], settings: dict, progress_cb) -> None:

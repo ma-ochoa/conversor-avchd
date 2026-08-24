@@ -392,9 +392,12 @@ function setupRangeFilter(cameras) {
 
   el("range-from").value = days[0];
   el("range-to").value = days[days.length - 1];
+  // Sin `max`: acotarlo a la última foto deja inservible el botón «Hoy» del calendario
+  // del navegador en cuanto el material no llega hasta hoy mismo.
   el("range-from").min = el("range-to").min = days[0];
-  el("range-from").max = el("range-to").max = days[days.length - 1];
-  updateRangeSummary();
+  el("range-from").removeAttribute("max");
+  el("range-to").removeAttribute("max");
+  applyRange(true);
 }
 
 function applyRange(check) {
@@ -404,6 +407,14 @@ function applyRange(check) {
     const day = row.dataset.day;
     const dentro = (!from || day >= from) && (!to || day <= to);
     row.querySelector(".day-include").checked = check ? dentro : false;
+    // Además de desmarcarlos, se ocultan: con 255 días, dejar en pantalla los que
+    // quedan fuera del rango hace imposible ver qué se va a importar de verdad.
+    row.classList.toggle("hidden", !dentro);
+  }
+  // Una cámara sin ningún día dentro del rango tampoco pinta nada.
+  for (const card of document.querySelectorAll(".camera-card")) {
+    const visibles = card.querySelectorAll(".day-row:not(.hidden)").length;
+    card.classList.toggle("hidden", visibles === 0);
   }
   el("plan-result").classList.add("hidden");
   updateRangeSummary();
@@ -411,24 +422,39 @@ function applyRange(check) {
 
 function updateRangeSummary() {
   const rows = Array.from(document.querySelectorAll(".day-row"));
+  const visibles = rows.filter((r) => !r.classList.contains("hidden"));
   const marcados = rows.filter((r) => r.querySelector(".day-include").checked);
+  const fuera = rows.length - visibles.length;
   el("range-summary").textContent =
-    `${marcados.length} de ${rows.length} días marcados.`;
+    `${marcados.length} días marcados` +
+    (fuera ? ` · ${fuera} fuera del rango, ocultos` : ` de ${rows.length}`) + ".";
 }
 
 for (const id of ["range-from", "range-to"]) {
   el(id).addEventListener("change", () => applyRange(true));
 }
+// «Todos» devuelve el rango a su extensión completa, en vez de marcar por lo bajo días
+// que están ocultos: marcar lo que no se ve es justo lo que hay que evitar aquí.
 el("range-all-btn").addEventListener("click", () => {
-  document.querySelectorAll(".day-include").forEach((c) => { c.checked = true; });
-  el("plan-result").classList.add("hidden");
-  updateRangeSummary();
+  const days = allDays();
+  if (!days.length) return;
+  el("range-from").value = days[0];
+  el("range-to").value = days[days.length - 1];
+  applyRange(true);
 });
+
+// «Ninguno» desmarca solo lo visible; lo que está fuera del rango ya estaba desmarcado.
 el("range-none-btn").addEventListener("click", () => {
-  document.querySelectorAll(".day-include").forEach((c) => { c.checked = false; });
+  document.querySelectorAll(".day-row:not(.hidden) .day-include")
+    .forEach((c) => { c.checked = false; });
   el("plan-result").classList.add("hidden");
   updateRangeSummary();
 });
+
+function allDays() {
+  return Array.from(document.querySelectorAll(".day-row"))
+    .map((r) => r.dataset.day).sort();
+}
 
 function renderCamera(camera) {
   const card = document.createElement("div");

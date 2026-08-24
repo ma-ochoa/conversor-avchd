@@ -852,7 +852,23 @@ carpeta de origen que se escanea.
     entero son 4070 archivos y 163 GB repartidos en **255 días**, lo que obligó a añadir
     un filtro por rango de fechas en la lista de días — marcar 255 casillas a mano no es
     una interfaz.
-42. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+42. **En el upload multipart, DSM no lee el `_sid` del cuerpo: hay que ponerlo también en
+    la query.** Síntoma desconcertante: el login va bien, `SYNO.FileStation.List` y
+    `CreateFolder` funcionan (POST normal, `_sid` en el cuerpo), y justo la subida
+    responde **119 «SID not found»** un instante después. Se arregla pasando
+    `params={"_sid": ...}` en la petición de subida. De paso se guarda la cookie `id` de
+    sesión, que cubre las rutas de DSM que identifican por cookie.
+
+    Añadido a eso, ante 105/106/119 la sesión se rehace una vez y se reintenta el fichero:
+    una subida de cientos de fotos puede agotar la sesión por el camino, y no tiene
+    sentido perder todo lo que quedaba. El token de dispositivo hace que ese relogin no
+    pida 2FA, que en un job en segundo plano no habría a quién pedírselo.
+43. **Las miniaturas del móvil salen del propio móvil.** MTP guarda una previsualización
+    de cada foto: `GP_FILE_TYPE_PREVIEW` devuelve **37 KB en 0,03 s** frente a los 2 MB
+    de la foto entera, lo que hace viable la vista rápida sobre un origen MTP sin
+    descargar nada. Se cachean en disco como las demás
+    (`thumbs.py::get_phone_thumbnail`), así que solo se piden una vez.
+44. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la

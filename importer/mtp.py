@@ -306,6 +306,21 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
     return entries
 
 
+def preview(folder: str, name: str) -> bytes:
+    """Miniatura que el propio móvil tiene guardada para ese fichero.
+
+    Es lo que hace viable la vista rápida sobre un móvil: la previsualización pesa unas
+    decenas de KB y llega en centésimas de segundo, frente a los megas de la foto entera.
+    """
+    gp = _gphoto()
+
+    def operation(camera):
+        camera_file = camera.file_get(folder, name, gp.GP_FILE_TYPE_PREVIEW)
+        return bytes(memoryview(camera_file.get_data_and_size()))
+
+    return _retry(operation)
+
+
 def fetch(folder: str, name: str, target: Path, expected_size: int | None = None) -> int:
     """Descarga **un** fichero del móvil a su ruta final. Devuelve los bytes escritos.
 

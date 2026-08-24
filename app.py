@@ -73,7 +73,7 @@ from importer.phones import detect_phones, open_transfer_app
 from importer.nas_jobs import get_upload_job, start_upload
 from importer.plan import build_plan, free_space
 from importer.sources import describe_source, detect_sources
-from importer.thumbs import get_thumbnail
+from importer.thumbs import get_phone_thumbnail, get_thumbnail
 
 app = Flask(__name__)
 
@@ -700,6 +700,10 @@ def importacion_thumb():
     if not path:
         abort(404)
     try:
+        # Un origen del móvil no es un fichero en disco: su miniatura hay que pedírsela
+        # al propio dispositivo, que guarda una previsualización de cada foto.
+        if is_mtp_source(path):
+            return send_file(get_phone_thumbnail(to_mtp_path(path)), conditional=True)
         return send_file(get_thumbnail(path), conditional=True)
     except Exception:
         abort(404)

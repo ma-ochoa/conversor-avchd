@@ -61,6 +61,28 @@ def _from_ffmpeg(source: Path, dest: Path, is_video: bool) -> bool:
     return _run(cmd) and dest.exists()
 
 
+def get_phone_thumbnail(mtp_path: str) -> Path:
+    """Miniatura de un fichero que está en el móvil, no en disco.
+
+    Se cachea igual que las demás: la previsualización se pide una sola vez al móvil, y
+    las siguientes cargas de la cuadrícula salen del disco sin volver a tocar el USB.
+    """
+    from . import mtp
+
+    cached = CACHE_DIR / (hashlib.sha1(mtp_path.encode()).hexdigest()[:16] + ".jpg")
+    if cached.exists() and cached.stat().st_size > 0:
+        return cached
+
+    folder, _, name = mtp_path.rstrip("/").rpartition("/")
+    data = mtp.preview(folder, name)
+    if not data:
+        raise FileNotFoundError(mtp_path)
+
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached.write_bytes(data)
+    return cached
+
+
 def get_thumbnail(source_path: str) -> Path:
     source = Path(source_path).expanduser()
     if not source.is_file():
