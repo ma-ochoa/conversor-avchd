@@ -19,6 +19,7 @@ import ftplib
 import platform
 import posixpath
 import ssl
+import uuid
 from pathlib import Path
 
 
@@ -154,6 +155,76 @@ def _redact(message: str, *secrets: str) -> str:
         if secret:
             message = message.replace(secret, "***")
     return message
+
+
+class _MultipartStream:
+    """Cuerpo `multipart/form-data` que lee el fichero por trozos según se envía.
+
+    **Por qué no vale `files=` de requests**: construye el cuerpo entero en memoria y lo
+    vuelca al socket de una vez. Con las fotos (2-3 MB) no se nota, pero con un vídeo de
+    100 MB o más la escritura se atasca y la conexión muere con
+    `TimeoutError('The write operation timed out')` — pasaba con los 26 vídeos de una
+    biblioteca real, mientras las 554 fotos habían subido sin problema.
+
+    Leyendo por trozos, ese mismo vídeo de 119 MB sube en 53 s, y además va más rápido
+    (2,2 MB/s frente a 1,2) porque no hay que serializarlo todo antes de empezar.
+    """
+
+    CHUNK = 1024 * 256
+
+    def __init__(self, fields: list[tuple[str, str]], path: Path, filename: str):
+        self.boundary = uuid.uuid4().hex
+        frontier = self.boundary.encode()
+
+        head = b""
+        for name, value in fields:
+            head += (b'--%s\r\nContent-Disposition: form-data; name="%s"\r\n\r\n%s\r\n'
+                     % (frontier, name.encode(), str(value).encode()))
+        # El binario va en la última parte: es un requisito de File Station.
+        head += (b'--%s\r\nContent-Disposition: form-data; name="file"; filename="%s"\r\n'
+                 b'Content-Type: application/octet-stream\r\n\r\n'
+                 % (frontier, filename.encode()))
+
+        self._head = head
+        self._tail = b"\r\n--%s--\r\n" % frontier
+        self._path = Path(path)
+        self._size = self._path.stat().st_size
+        self._handle = None
+        self._sent_head = 0
+        self._sent_tail = 0
+
+    def __len__(self) -> int:
+        return len(self._head) + self._size + len(self._tail)
+
+    @property
+    def content_type(self) -> str:
+        return f"multipart/form-data; boundary={self.boundary}"
+
+    def read(self, amount: int = -1) -> bytes:
+        if amount is None or amount < 0:
+            amount = self.CHUNK
+
+        if self._sent_head < len(self._head):
+            chunk = self._head[self._sent_head:self._sent_head + amount]
+            self._sent_head += len(chunk)
+            return chunk
+
+        if self._handle is None:
+            self._handle = open(self._path, "rb")
+        chunk = self._handle.read(amount)
+        if chunk:
+            return chunk
+
+        if self._sent_tail < len(self._tail):
+            chunk = self._tail[self._sent_tail:self._sent_tail + amount]
+            self._sent_tail += len(chunk)
+            return chunk
+        return b""
+
+    def close(self) -> None:
+        if self._handle:
+            self._handle.close()
+            self._handle = None
 
 
 class _SynologySession:
@@ -327,32 +398,39 @@ class _SynologySession:
 
     def upload(self, local: Path, remote_dir: str, filename: str, _retry: bool = True) -> None:
         self.ensure_dir(remote_dir)
-        with open(local, "rb") as handle:
-            # El binario tiene que ser la última parte del multipart: es un requisito de
-            # la API de File Station, no una preferencia.
-            parts = [
-                ("api", (None, "SYNO.FileStation.Upload")),
-                ("version", (None, self.api_version("SYNO.FileStation.Upload"))),
-                ("method", (None, "upload")),
-                ("_sid", (None, self.sid)),
-                ("path", (None, remote_dir)),
-                ("create_parents", (None, "true")),
-                ("overwrite", (None, "skip")),
-                ("file", (filename, handle, "application/octet-stream")),
-            ]
-            try:
-                response = self.session.post(
-                    self.api_url("SYNO.FileStation.Upload"),
-                    # **El `_sid` va además en la query.** En una petición multipart DSM
-                    # no lo lee de forma fiable del cuerpo y responde 119 («sesión no
-                    # válida») aunque el login acabe de funcionar y `ensure_dir` —que va
-                    # por POST normal— haya ido bien un instante antes.
-                    params={"_sid": self.sid},
-                    files=parts, timeout=(10, None),
-                )
-            except self.requests.exceptions.RequestException as exc:
-                detail = _redact(str(exc), self.settings.get("password", ""))
-                raise NasError(f"Error subiendo {filename}: {detail}") from exc
+
+        body = _MultipartStream(
+            [
+                ("api", "SYNO.FileStation.Upload"),
+                ("version", self.api_version("SYNO.FileStation.Upload")),
+                ("method", "upload"),
+                ("_sid", self.sid),
+                ("path", remote_dir),
+                ("create_parents", "true"),
+                ("overwrite", "skip"),
+            ],
+            local, filename,
+        )
+        try:
+            response = self.session.post(
+                self.api_url("SYNO.FileStation.Upload"),
+                # **El `_sid` va además en la query.** En una petición multipart DSM
+                # no lo lee de forma fiable del cuerpo y responde 119 («sesión no
+                # válida») aunque el login acabe de funcionar y `ensure_dir` —que va
+                # por POST normal— haya ido bien un instante antes.
+                params={"_sid": self.sid},
+                data=body,
+                headers={"Content-Type": body.content_type,
+                         "Content-Length": str(len(body))},
+                # Generoso pero finito: un vídeo grande tarda minutos, y `None` no vale
+                # porque deja el connect timeout aplicado a la escritura y corta a los 10 s.
+                timeout=(15, 600),
+            )
+        except self.requests.exceptions.RequestException as exc:
+            detail = _redact(str(exc), self.settings.get("password", ""))
+            raise NasError(f"Error subiendo {filename}: {detail}") from exc
+        finally:
+            body.close()
 
         payload = response.json()
         code = (payload.get("error") or {}).get("code")

@@ -896,7 +896,25 @@ carpeta de origen que se escanea.
     para comprobarlo**: en esta API, `success` significa "he entendido la petición", no
     "está hecho". Aplicable a cualquier operación de File Station que se dé por buena sin
     verificar.
-48. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+48. **`files=` de requests no sirve para subir ficheros grandes: hay que hacer
+    streaming.** Construye el cuerpo multipart entero en memoria y lo vuelca al socket de
+    una vez. Con fotos de 2-3 MB no se nota; con vídeos, la escritura se atasca y la
+    conexión muere con `TimeoutError('The write operation timed out')`. En una biblioteca
+    real subieron **554 fotos sin un fallo y se atascaron los 26 vídeos**, que era todo lo
+    que quedaba.
+
+    Dos detalles que despistan al diagnosticarlo:
+    - **Falla a los 10 segundos exactos**, que es el *connect* timeout, no el de lectura:
+      con `timeout=(10, None)` ese 10 se queda aplicado a las escrituras del socket.
+    - **Subir el read timeout no lo arregla**: con `(15, 600)` fallaba igual. El problema
+      no es el tiempo, es volcar 119 MB de golpe.
+
+    La solución es `_MultipartStream`, que construye las cabeceras y luego lee el fichero
+    por trozos de 256 KB, con `Content-Length` calculado (sin él, requests usaría chunked
+    y File Station no lo acepta). Medido: el mismo vídeo de 119 MB pasa de fallar siempre
+    a subir en 53 s, y **más rápido** (2,2 MB/s frente a 1,2) porque no hay que
+    serializarlo entero antes de empezar.
+49. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la
