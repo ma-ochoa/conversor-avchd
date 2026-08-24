@@ -889,7 +889,14 @@ carpeta de origen que se escanea.
     material ya subido al NAS**: hay que reorganizar los dos lados y, sobre todo,
     actualizar `dest`/`dest_relative` en el historial, o la subida buscará los ficheros
     donde ya no están.
-47. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+47. **`SYNO.FileStation.Delete` responde `success: true` sin borrar nada** si el `path`
+    lleva varias rutas separadas por comas y alguna contiene espacios (`Canon G5X`). La
+    petición se acepta, la respuesta es correcta, y las carpetas siguen ahí. Hay que pasar
+    el `path` como **array JSON** (`json.dumps([ruta])`), y sobre todo **volver a listar
+    para comprobarlo**: en esta API, `success` significa "he entendido la petición", no
+    "está hecho". Aplicable a cualquier operación de File Station que se dé por buena sin
+    verificar.
+48. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la
