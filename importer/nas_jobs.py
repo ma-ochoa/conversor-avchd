@@ -5,6 +5,7 @@ subida, sin tener que volver a importar la tarjeta.
 """
 
 import threading
+import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -50,17 +51,22 @@ def _run(job_id: str, entries: list[dict]) -> None:
         # principio, aunque ya hubiera cientos de archivos en el NAS.
         por_relativa = {e["dest_relative"]: e["dest"] for e in entries}
         subidos: list[str] = []
+        ultimo = [time.monotonic()]
 
         def progress_cb(done, current):
             job["done"] = done
             job["current"] = current
             dest = por_relativa.get(current)
-            if dest:
-                subidos.append(dest)
-                # En lotes, para no reescribir el historial entero por cada foto.
-                if len(subidos) >= 25:
-                    history.mark_uploaded(subidos)
-                    subidos.clear()
+            if not dest:
+                return
+            subidos.append(dest)
+            # Se agrupa para no reescribir el historial entero por cada foto, pero
+            # también se vuelca cada pocos segundos: un vídeo grande tarda minutos, y
+            # esperar a juntar un lote dejaría sin registrar todo ese rato.
+            if len(subidos) >= 20 or time.monotonic() - ultimo[0] > 20:
+                history.mark_uploaded(subidos)
+                subidos.clear()
+                ultimo[0] = time.monotonic()
 
         try:
             upload_files(
