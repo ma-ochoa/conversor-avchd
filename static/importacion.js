@@ -81,9 +81,109 @@ async function detectSources(retry) {
     sourceStatus.textContent = data.sources.length ? "" : "Nada detectado.";
     renderBlockedWarning(data.blocked_folders);
     renderPhones();
+    renderPendingDownloads();
   } catch (err) {
     sourceStatus.textContent = err.message;
   }
+}
+
+// Lo descargado del móvil espera en una carpeta oculta hasta que se importa. Si no se
+// avisa, esos archivos desaparecen de la vista y el usuario no sabe dónde han ido.
+async function renderPendingDownloads() {
+  const box = el("pending-downloads");
+  let downloads = [];
+  try {
+    downloads = (await api("/api/importacion/mtp/pending")).downloads;
+  } catch {
+    return;
+  }
+  if (!downloads.length) {
+    box.classList.add("hidden");
+    return;
+  }
+
+  box.innerHTML = "";
+  box.classList.remove("hidden");
+
+  const total = downloads.reduce((n, d) => n + d.files, 0);
+  const bytes = downloads.reduce((n, d) => n + d.bytes, 0);
+
+  const title = document.createElement("div");
+  title.innerHTML =
+    `📥 <strong>${total} archivos descargados del móvil (${formatBytes(bytes)}) todavía sin importar.</strong>`;
+  box.appendChild(title);
+
+  const text = document.createElement("p");
+  text.className = "muted";
+  text.textContent =
+    "Están guardados a la espera de que completes la importación: elige la carpeta de " +
+    "destino, revisa el plan y pulsa «Importar». Hasta entonces no se organizan ni se " +
+    "copian a tu fototeca.";
+  box.appendChild(text);
+
+  for (const download of downloads) {
+    const row = document.createElement("div");
+    row.className = "pending-row";
+
+    const label = document.createElement("span");
+    label.textContent = `${download.name} — ${download.files} archivos, ${formatBytes(download.bytes)}` +
+      (download.partial ? ` (+${download.partial} incompleto por una descarga cortada)` : "");
+    row.appendChild(label);
+
+    const use = document.createElement("button");
+    use.className = "primary";
+    use.textContent = "Continuar la importación";
+    use.addEventListener("click", () => selectSource(download.path, null));
+    row.appendChild(use);
+
+    const drop = document.createElement("button");
+    drop.textContent = "Descartar";
+    drop.addEventListener("click", async () => {
+      if (!confirm(
+        `Se borrarán ${download.files} archivos descargados de «${download.name}».\n\n` +
+        "Siguen estando en el móvil, así que podrás volver a bajarlos. ¿Continuar?")) return;
+      await postJson("/api/importacion/mtp/cleanup", { path: download.path });
+      renderPendingDownloads();
+    });
+    row.appendChild(drop);
+
+    box.appendChild(row);
+  }
+}
+
+function offerCleanupDownload(path, copied) {
+  const box = el("pending-downloads");
+  box.innerHTML = "";
+  box.classList.remove("hidden");
+
+  const text = document.createElement("div");
+  text.innerHTML =
+    `✅ <strong>${copied} archivos ya están en tu fototeca.</strong> La copia intermedia de ` +
+    "la descarga del móvil ya no hace falta.";
+  box.appendChild(text);
+
+  const row = document.createElement("div");
+  row.className = "pending-row";
+
+  const drop = document.createElement("button");
+  drop.className = "primary";
+  drop.textContent = "Liberar ese espacio";
+  drop.addEventListener("click", async () => {
+    try {
+      await postJson("/api/importacion/mtp/cleanup", { path });
+      renderPendingDownloads();
+    } catch (err) {
+      sourceStatus.textContent = err.message;
+    }
+  });
+  row.appendChild(drop);
+
+  const keep = document.createElement("button");
+  keep.textContent = "Conservarla";
+  keep.addEventListener("click", () => renderPendingDownloads());
+  row.appendChild(keep);
+
+  box.appendChild(row);
 }
 
 async function renderPhones() {
@@ -156,14 +256,16 @@ async function renderPhones() {
 }
 
 // ---------------------------------------------------- Explorador del móvil (MTP)
+//
+// El móvil es un origen más: se elige una carpeta y, a partir de ahí, el flujo es
+// idéntico al de una tarjeta. No hay descarga previa a ninguna carpeta intermedia — los
+// archivos se bajan directamente a su destino final cuando se pulsa «Importar».
 
 let mtpPath = "/";
-let mtpFiles = [];
 
 async function browseMtp(path) {
   el("mtp-status").textContent = "";
   el("mtp-path").textContent = "Leyendo…";
-  el("mtp-selection").classList.add("hidden");
   try {
     const data = await postJson("/api/importacion/mtp/folder", { path });
     mtpPath = data.path;
@@ -178,66 +280,13 @@ async function browseMtp(path) {
       li.addEventListener("click", () => browseMtp(folder.path));
       list.appendChild(li);
     }
-    // Siempre se ofrece: contar los archivos por adelantado costaría segundos en las
-    // carpetas grandes, que son justo las que interesan.
-    const li = document.createElement("li");
-    li.className = "mtp-files-row";
-    li.textContent = "🖼 Ver los archivos de esta carpeta";
-    li.addEventListener("click", () => loadMtpFiles(mtpPath));
-    list.appendChild(li);
+    if (!data.folders.length) {
+      list.innerHTML = "<li class='muted'>No hay subcarpetas aquí.</li>";
+    }
   } catch (err) {
     el("mtp-path").textContent = mtpPath;
     el("mtp-status").textContent = err.message;
   }
-}
-
-async function loadMtpFiles(path) {
-  el("mtp-status").textContent = "Leyendo los archivos… (puede tardar en carpetas grandes)";
-  try {
-    const data = await postJson("/api/importacion/mtp/files", { path });
-    mtpFiles = data.files;
-    const t = data.totals;
-    el("mtp-summary").textContent =
-      `${t.files} archivos · ${t.photos} fotos · ${t.videos} vídeos · ${formatBytes(t.bytes)}` +
-      (t.duplicates ? ` · ${t.duplicates} ya importados antes` : "");
-
-    // Las fechas del propio material acotan el filtro, en vez de dejarlo abierto.
-    const dates = mtpFiles.map((f) => f.captured).filter(Boolean).sort();
-    if (dates.length) {
-      el("mtp-from").value = dates[0].slice(0, 10);
-      el("mtp-to").value = dates[dates.length - 1].slice(0, 10);
-    }
-    el("mtp-selection").classList.remove("hidden");
-    el("mtp-status").textContent = "";
-    updateMtpFiltered();
-  } catch (err) {
-    el("mtp-status").textContent = err.message;
-  }
-}
-
-function mtpSelected() {
-  const from = el("mtp-from").value;
-  const to = el("mtp-to").value;
-  const skip = el("mtp-skip-dup").checked;
-  return mtpFiles.filter((f) => {
-    if (skip && f.duplicate) return false;
-    const day = (f.captured || "").slice(0, 10);
-    if (from && day && day < from) return false;
-    if (to && day && day > to) return false;
-    return true;
-  });
-}
-
-function updateMtpFiltered() {
-  const chosen = mtpSelected();
-  const bytes = chosen.reduce((n, f) => n + (f.size || 0), 0);
-  el("mtp-filtered").textContent =
-    `Se descargarán ${chosen.length} archivos (${formatBytes(bytes)}).`;
-  el("mtp-download-btn").disabled = chosen.length === 0;
-}
-
-for (const id of ["mtp-from", "mtp-to", "mtp-skip-dup"]) {
-  el(id).addEventListener("change", updateMtpFiltered);
 }
 
 el("mtp-up-btn").addEventListener("click", () => browseMtp(
@@ -248,61 +297,21 @@ el("mtp-close-btn").addEventListener("click", () => {
   el("mtp-browser").classList.add("hidden");
 });
 
-el("mtp-download-btn").addEventListener("click", async () => {
-  const chosen = mtpSelected();
-  if (!chosen.length) return;
-  el("mtp-download-btn").disabled = true;
-  el("mtp-bar").classList.remove("hidden");
-  el("mtp-status").textContent = "Iniciando…";
+el("mtp-use-btn").addEventListener("click", async () => {
+  el("mtp-status").textContent =
+    "Leyendo el móvil… en una carpeta con miles de fotos esto tarda unos segundos.";
+  el("mtp-use-btn").disabled = true;
   try {
-    const data = await postJson("/api/importacion/mtp/download", {
-      folder: mtpPath, files: chosen, skip_duplicates: el("mtp-skip-dup").checked,
-    });
-    pollMtp(data.job_id);
+    // El prefijo mtp:// distingue un origen del móvil de una ruta de disco.
+    await selectSource("mtp://" + mtpPath, null);
+    el("mtp-browser").classList.add("hidden");
+    el("mtp-status").textContent = "";
   } catch (err) {
     el("mtp-status").textContent = err.message;
-    el("mtp-download-btn").disabled = false;
+  } finally {
+    el("mtp-use-btn").disabled = false;
   }
 });
-
-async function pollMtp(jobId) {
-  let job;
-  try {
-    job = await api(`/api/importacion/mtp/status/${jobId}`);
-  } catch (err) {
-    el("mtp-status").textContent = err.message;
-    el("mtp-download-btn").disabled = false;
-    return;
-  }
-
-  el("mtp-bar").value = job.total ? job.done / job.total : 0;
-  el("mtp-status").textContent =
-    `${job.done}/${job.total}${job.current ? ` — ${job.current}` : ""}`;
-
-  if (job.state === "en_curso") {
-    setTimeout(() => pollMtp(jobId), 500);
-    return;
-  }
-
-  el("mtp-download-btn").disabled = false;
-  el("mtp-bar").classList.add("hidden");
-
-  if (job.state === "error") {
-    el("mtp-status").textContent = job.error;
-    return;
-  }
-
-  el("mtp-status").textContent =
-    `Descargados ${job.saved} archivos` +
-    (job.skipped ? ` (${job.skipped} omitidos por estar ya importados)` : "") + ".";
-
-  // La carpeta descargada pasa a ser el origen: a partir de aquí el flujo es el mismo
-  // que con una tarjeta.
-  if (job.destination && job.saved) {
-    el("mtp-browser").classList.add("hidden");
-    await selectSource(job.destination, null);
-  }
-}
 
 function renderBlockedWarning(blocked) {
   const box = el("blocked-warning");
@@ -359,6 +368,8 @@ function renderScan(data) {
     camerasBox.appendChild(renderCamera(camera));
   }
 
+  setupRangeFilter(data.cameras);
+
   el("content-section").classList.remove("hidden");
   el("preview-section").classList.remove("hidden");
   el("options-section").classList.remove("hidden");
@@ -368,6 +379,56 @@ function renderScan(data) {
   applyPreviewFilters();
   updateSpaceInfo(data.free_bytes, t.bytes);
 }
+
+// La carpeta de fotos de un móvil abarca meses: marcar 255 días a mano no es viable, así
+// que se ofrece marcar por rango. Con pocos días la lista se maneja sola y no aparece.
+const RANGE_FILTER_FROM_DAYS = 8;
+
+function setupRangeFilter(cameras) {
+  const days = cameras.flatMap((c) => c.days.map((d) => d.date)).sort();
+  const box = el("range-filter");
+  box.classList.toggle("hidden", days.length < RANGE_FILTER_FROM_DAYS);
+  if (days.length < RANGE_FILTER_FROM_DAYS) return;
+
+  el("range-from").value = days[0];
+  el("range-to").value = days[days.length - 1];
+  el("range-from").min = el("range-to").min = days[0];
+  el("range-from").max = el("range-to").max = days[days.length - 1];
+  updateRangeSummary();
+}
+
+function applyRange(check) {
+  const from = el("range-from").value;
+  const to = el("range-to").value;
+  for (const row of document.querySelectorAll(".day-row")) {
+    const day = row.dataset.day;
+    const dentro = (!from || day >= from) && (!to || day <= to);
+    row.querySelector(".day-include").checked = check ? dentro : false;
+  }
+  el("plan-result").classList.add("hidden");
+  updateRangeSummary();
+}
+
+function updateRangeSummary() {
+  const rows = Array.from(document.querySelectorAll(".day-row"));
+  const marcados = rows.filter((r) => r.querySelector(".day-include").checked);
+  el("range-summary").textContent =
+    `${marcados.length} de ${rows.length} días marcados.`;
+}
+
+for (const id of ["range-from", "range-to"]) {
+  el(id).addEventListener("change", () => applyRange(true));
+}
+el("range-all-btn").addEventListener("click", () => {
+  document.querySelectorAll(".day-include").forEach((c) => { c.checked = true; });
+  el("plan-result").classList.add("hidden");
+  updateRangeSummary();
+});
+el("range-none-btn").addEventListener("click", () => {
+  document.querySelectorAll(".day-include").forEach((c) => { c.checked = false; });
+  el("plan-result").classList.add("hidden");
+  updateRangeSummary();
+});
 
 function renderCamera(camera) {
   const card = document.createElement("div");
@@ -428,7 +489,10 @@ function renderDay(cameraKey, day) {
   check.type = "checkbox";
   check.className = "day-include";
   check.checked = true;
-  check.addEventListener("change", () => el("plan-result").classList.add("hidden"));
+  check.addEventListener("change", () => {
+    el("plan-result").classList.add("hidden");
+    updateRangeSummary();
+  });
 
   const label = document.createElement("button");
   label.type = "button";
@@ -778,6 +842,13 @@ async function pollJob(jobId) {
         : `, subida al NAS: ${job.upload.error || job.upload.state}`;
     }
     el("job-summary").textContent = text + ".";
+
+    // Si lo importado venía de una descarga del móvil, esa copia intermedia ya no hace
+    // falta: se ofrece liberarla en vez de dejar los archivos duplicados en una carpeta
+    // oculta.
+    if (selectedSource && selectedSource.includes("/descargas-movil/") && s.copied && !s.errors) {
+      offerCleanupDownload(selectedSource, s.copied);
+    }
 
     const warnings = el("job-warnings");
     warnings.innerHTML = "";

@@ -20,6 +20,7 @@ organizadas por cámara y por día, y envíalas al NAS.</p>
       <span id="source-status" class="status-text"></span>
     </div>
     <p id="blocked-warning" class="hint warn hidden"></p>
+    <div id="pending-downloads" class="pending-downloads hidden"></div>
     <div id="phone-notice" class="phone-notice hidden"></div>
 
     <div id="mtp-browser" class="mtp-browser hidden">
@@ -29,25 +30,13 @@ organizadas por cámara y por día, y envíalas al NAS.</p>
         <button id="mtp-close-btn" type="button">Cerrar</button>
       </div>
       <ul id="mtp-list" class="browser-list"></ul>
-
-      <div id="mtp-selection" class="mtp-selection hidden">
-        <p id="mtp-summary"></p>
-        <div class="controls-row">
-          <label>Desde
-            <input id="mtp-from" type="date">
-          </label>
-          <label>Hasta
-            <input id="mtp-to" type="date">
-          </label>
-          <label class="inline">
-            <input type="checkbox" id="mtp-skip-dup" checked> Omitir lo ya importado
-          </label>
-        </div>
-        <p id="mtp-filtered" class="muted"></p>
-        <button id="mtp-download-btn" class="primary">Descargar al disco</button>
-        <progress id="mtp-bar" class="hidden" max="1" value="0"></progress>
+      <div class="browser-actions">
+        <button id="mtp-use-btn" class="primary">Usar esta carpeta como origen</button>
         <span id="mtp-status" class="status-text"></span>
       </div>
+      <p class="hint">Se leerá esta carpeta y todas sus subcarpetas. Después eliges qué
+      días importar, igual que con una tarjeta, y los archivos se descargan directamente a
+      tu fototeca.</p>
     </div>
     <ul id="source-list" class="source-list"></ul>
     <p id="source-empty" class="muted hidden">
@@ -59,6 +48,23 @@ organizadas por cámara y por día, y envíalas al NAS.</p>
   <section id="content-section" class="hidden">
     <h2>2. Qué hay en el origen</h2>
     <p id="scan-summary" class="muted"></p>
+
+    <div id="range-filter" class="range-filter hidden">
+      <div class="controls-row">
+        <label>Importar desde
+          <input id="range-from" type="date">
+        </label>
+        <label>hasta
+          <input id="range-to" type="date">
+        </label>
+        <button id="range-all-btn">Todos</button>
+        <button id="range-none-btn">Ninguno</button>
+        <span id="range-summary" class="muted"></span>
+      </div>
+      <p class="hint">Marca y desmarca días de golpe. Útil cuando el origen abarca meses,
+      como la carpeta de fotos de un móvil.</p>
+    </div>
+
     <div id="cameras"></div>
   </section>
 

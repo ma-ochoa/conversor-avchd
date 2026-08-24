@@ -67,13 +67,8 @@ from importer.nas import (
 )
 from importer import mtp
 from importer.history import imported_keys
-from importer.mtp_jobs import (
-    cleanup as mtp_cleanup,
-    download_key as mtp_download_key,
-    get_job as get_mtp_job,
-    pending_downloads,
-    start_download as start_mtp_download,
-)
+from importer.mtp_jobs import cleanup as mtp_cleanup, pending_downloads
+from importer.mtp_scan import is_mtp_source, scan_phone, to_mtp_path, to_source as mtp_source
 from importer.phones import detect_phones, open_transfer_app
 from importer.nas_jobs import get_upload_job, start_upload
 from importer.plan import build_plan, free_space
@@ -590,14 +585,32 @@ def importacion_scan():
     if not path:
         return jsonify({"error": "Falta el origen a escanear"}), 400
 
-    try:
-        source = describe_source(path)
-    except NotADirectoryError:
-        return jsonify({"error": f"No es una carpeta válida: {path}"}), 400
-
     config = load_config()
     imported = import_history.imported_keys() if config["skip_duplicates"] else set()
-    scan = scan_source(source["path"], config, already_imported=imported)
+
+    # El móvil es un origen más: se escanea leyendo sus metadatos por MTP, sin descargar
+    # nada, y a partir de aquí el flujo es idéntico al de una tarjeta.
+    if is_mtp_source(path):
+        try:
+            scan = scan_phone(to_mtp_path(path), config, already_imported=imported)
+        except mtp.MtpError as exc:
+            return jsonify({"error": str(exc)}), 400
+        source = {
+            "path": path,
+            "label": scan["cameras"][0]["suggested"] if scan["cameras"] else "Móvil",
+            "kind": "movil",
+            "is_card": True,
+            "parent": None,
+            "removable": True,
+            "total_bytes": None,
+            "free_bytes": None,
+        }
+    else:
+        try:
+            source = describe_source(path)
+        except NotADirectoryError:
+            return jsonify({"error": f"No es una carpeta válida: {path}"}), 400
+        scan = scan_source(source["path"], config, already_imported=imported)
 
     scan_id = uuid.uuid4().hex
     _scans[scan_id] = scan
@@ -774,52 +787,6 @@ def importacion_mtp_folder():
         return jsonify(mtp.list_folder(data.get("path") or "/"))
     except mtp.MtpError as exc:
         return jsonify({"error": str(exc)}), 400
-
-
-@app.route("/api/importacion/mtp/files", methods=["POST"])
-def importacion_mtp_files():
-    data = request.get_json(force=True)
-    path = data.get("path")
-    if not path:
-        return jsonify({"error": "Falta la carpeta del móvil."}), 400
-    try:
-        files = mtp.list_files(path)
-    except mtp.MtpError as exc:
-        return jsonify({"error": str(exc)}), 400
-
-    known = imported_keys()
-    for entry in files:
-        entry["duplicate"] = mtp_download_key(entry) in known
-
-    return jsonify({
-        "path": path,
-        "files": files,
-        "totals": {
-            "files": len(files),
-            "photos": sum(1 for f in files if f["category"] == "photo"),
-            "videos": sum(1 for f in files if f["category"] == "video"),
-            "bytes": sum(f["size"] or 0 for f in files),
-            "duplicates": sum(1 for f in files if f["duplicate"]),
-        },
-    })
-
-
-@app.route("/api/importacion/mtp/download", methods=["POST"])
-def importacion_mtp_download():
-    data = request.get_json(force=True)
-    folder, entries = data.get("folder"), data.get("files", [])
-    if not folder or not entries:
-        return jsonify({"error": "Elige una carpeta y al menos un archivo."}), 400
-    job_id = start_mtp_download(folder, entries, bool(data.get("skip_duplicates", True)))
-    return jsonify({"job_id": job_id})
-
-
-@app.route("/api/importacion/mtp/status/<job_id>")
-def importacion_mtp_status(job_id):
-    job = get_mtp_job(job_id)
-    if not job:
-        return jsonify({"error": "Trabajo no encontrado"}), 404
-    return jsonify(job)
 
 
 @app.route("/api/importacion/mtp/pending")

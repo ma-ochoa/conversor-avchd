@@ -171,7 +171,8 @@ importer/                       ⭐ Paquete del importador — ver sección prop
   nas_jobs.py                   Job de subida independiente (reintentar pendientes)
   phones.py                     Detecta móviles USB por ioreg (rápido, sin dependencias)
   mtp.py                        Lee carpetas y descarga del móvil por MTP (bindings gphoto2)
-  mtp_jobs.py                   Job de descarga desde el móvil a una carpeta de trabajo
+  mtp_scan.py                   ⭐ Convierte el móvil en un «escaneo» igual que una tarjeta
+  mtp_jobs.py                   Solo restos del flujo antiguo (descargas sin importar)
 
   ── módulo Ubicación (mismo paquete, ver sección propia abajo) ──
   geoindex.py                   .ubicaciones.json: qué archivo tiene GPS y cuál no
@@ -825,7 +826,33 @@ carpeta de origen que se escanea.
     uno de permisos — y sin arriesgarse a disparar el bloqueo automático de DSM con
     intentos de login fallidos. Comprobado contra el NAS del usuario: responde en 0,3 s y
     ofrece `SYNO.API.Auth` hasta la versión 7.
-40. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
+40. **El móvil tenía un paso intermedio que sobraba, y el usuario lo señaló.** La primera
+    versión descargaba lo elegido a `~/.conversor-importador/descargas-movil/` y desde ahí
+    se importaba, para reutilizar el flujo de las tarjetas sin tocarlo. Consecuencias, las
+    tres reales: duplicaba el material en disco, **escondía los archivos** si no se
+    completaba la importación en el momento (1,5 GB "desaparecidos" en una carpeta oculta,
+    que fue exactamente lo que pasó), y obligaba a hacer el trabajo en dos tiempos.
+
+    Se puede hacer directo porque **MTP da todo lo necesario sin descargar nada**:
+    - el modelo del móvil (`camera.get_summary()` → `SM-S938B`), que es la clave de cámara
+      y ya estaba en `KNOWN_MODELS`;
+    - la fecha y el **tamaño exacto** de cada fichero, que es lo que hace falta para
+      agrupar por día y planificar.
+
+    `mtp_scan.py` construye con eso el mismo diccionario que `media.scan_source`, con
+    rutas marcadas `mtp://`, y `jobs.py` descarga cada fichero directamente a su destino
+    final. Un solo flujo para tarjeta y móvil. Lo único que no se sabe por adelantado es
+    el GPS —vive dentro del archivo— así que se lee después de copiar, en un exiftool por
+    lote (`_fill_missing_gps`). Y **del móvil no se borra nada**: sin checksum del lado
+    del dispositivo la verificación es solo por tamaño, y eso no basta para destruir el
+    único ejemplar.
+41. **`--list-files` de una carpeta debe ser recursivo.** Pedir "los archivos de DCIM"
+    tiene que traer los de `DCIM/Camera` y `DCIM/Screenshots`: en DCIM a secas no suele
+    haber nada suelto, y una lista vacía ahí no le sirve a nadie. Medido en el S25: DCIM
+    entero son 4070 archivos y 163 GB repartidos en **255 días**, lo que obligó a añadir
+    un filtro por rango de fechas en la lista de días — marcar 255 casillas a mano no es
+    una interfaz.
+42. **El mismo móvil Samsung se identifica de dos formas distintas.** Las fotos llevan el
     nombre comercial en EXIF (`Galaxy S25 Ultra`) y los vídeos el código interno en un tag
     propio del fabricante (`Samsung:SamsungModel` = `SM-S938B`), que además no se leía, de
     modo que los vídeos del móvil caían en "sin identificar" mientras sus fotos de la

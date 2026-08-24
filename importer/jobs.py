@@ -10,8 +10,10 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
-from . import geoindex, history
+from . import geoindex, history, mtp
 from .config import load_config, remember_camera
+from .exif import read_metadata
+from .mtp_scan import is_mtp_source
 from .copier import copy_verified, set_file_time
 from .media import import_key
 
@@ -39,6 +41,9 @@ def start_job(source: str, items: list[dict], options: dict, camera_folders: dic
                 "capture_dt": item["capture_dt"],
                 "name": item["name"],
                 "gps": item.get("gps"),
+                # Solo para orígenes MTP: la carpeta del móvil de la que sacar el fichero,
+                # ya que su "path" no es una ruta de disco que se pueda abrir.
+                "mtp_folder": item.get("mtp_folder"),
                 "status": "pendiente",
                 "percent": 0.0,
                 "verified": False,
@@ -78,16 +83,24 @@ def _copy_all(job: dict, verify: bool, destination: Path) -> None:
     geo_entries: dict[str, dict] = {}
 
     for item in job["items"]:
-        source = Path(item["path"])
         dest = Path(item["dest"])
         item["status"] = "copiando"
         try:
-            def progress_cb(fraction, item=item, verify=verify):
-                item["percent"] = fraction
-                if verify and fraction >= 0.5 and item["status"] == "copiando":
-                    item["status"] = "verificando"
+            if is_mtp_source(item["path"]):
+                # El móvil no es una ruta de disco: se descarga directamente a su destino
+                # final, sin pasar por ninguna copia intermedia. No hay checksum del lado
+                # del móvil, así que la verificación es por tamaño exacto.
+                mtp.fetch(item["mtp_folder"], item["name"], dest, item["size"])
+                result = {"sha256": "", "verified": False}
+                item["percent"] = 1.0
+            else:
+                def progress_cb(fraction, item=item, verify=verify):
+                    item["percent"] = fraction
+                    if verify and fraction >= 0.5 and item["status"] == "copiando":
+                        item["status"] = "verificando"
 
-            result = copy_verified(source, dest, verify=verify, progress_cb=progress_cb)
+                result = copy_verified(Path(item["path"]), dest, verify=verify,
+                                       progress_cb=progress_cb)
             set_file_time(dest, datetime.fromisoformat(item["capture_dt"]).timestamp())
 
             item["status"] = "completado"
@@ -116,9 +129,33 @@ def _copy_all(job: dict, verify: bool, destination: Path) -> None:
             item["status"] = "error"
             item["error"] = str(exc)
 
+    # Del móvil no se conoce el GPS por adelantado —vive dentro del archivo, y leerlo
+    # habría exigido descargarlo antes—, así que se lee ahora, de lo ya copiado, en un
+    # solo exiftool por lote.
+    _fill_missing_gps(job, geo_entries)
+
     # Se escribe una sola vez al final: un JSON por fichero copiado sería miles de
     # reescrituras del índice completo durante la importación de una tarjeta.
     geoindex.record_many(destination, geo_entries)
+
+
+def _fill_missing_gps(job: dict, geo_entries: dict[str, dict]) -> None:
+    pending = [
+        item for item in job["items"]
+        if item["status"] == "completado" and item.get("gps") is None
+        and is_mtp_source(item["path"]) and item["category"] != "sidecar"
+    ]
+    if not pending:
+        return
+
+    metadata = read_metadata([Path(item["dest"]) for item in pending])
+    for item in pending:
+        meta = metadata.get(item["dest"])
+        if meta and meta.get("gps"):
+            entry = geo_entries.get(item["dest_relative"])
+            if entry:
+                entry["gps"] = list(meta["gps"])
+                entry["source"] = geoindex.SOURCE_EXIF
 
 
 def _delete_sources(job: dict, verify: bool) -> None:
@@ -128,6 +165,14 @@ def _delete_sources(job: dict, verify: bool) -> None:
     if not verify:
         job["delete_errors"].append(
             "No se ha borrado nada: el borrado del origen exige la verificación por checksum."
+        )
+        return
+
+    if any(is_mtp_source(item["path"]) for item in job["items"]):
+        job["delete_errors"].append(
+            "No se borra nada del móvil: la verificación por checksum no es posible sobre "
+            "MTP (solo se comprueba el tamaño), y borrar el único ejemplar sin poder "
+            "comprobarlo del todo sería temerario. Bórralas desde el móvil si quieres."
         )
         return
 

@@ -197,11 +197,18 @@ pantalla y se guardan fuera de la tarjeta, que no se toca. Lo que ya se importó
 aparece atenuado y marcado.
 
 **Móviles conectados**: si enchufas un Android o un iPhone se detecta, y **Explorar el
-móvil** abre sus carpetas para elegir qué bajar: entras en `DCIM/Camera` y dejas fuera lo
-descargado de Telegram, WhatsApp o las capturas de pantalla. Verás los archivos con su
-fecha y tamaño, puedes acotar por rango de fechas y omitir lo que ya importaste otra vez.
-Lo que descargues pasa al flujo normal: se organiza por cámara, día y evento igual que una
-tarjeta.
+móvil** abre sus carpetas. Eliges una — `DCIM` para todo lo de la cámara, `DCIM/Camera`
+para solo las fotos, dejando fuera Telegram o WhatsApp — y **a partir de ahí es una
+tarjeta más**: se lee esa carpeta y todas sus subcarpetas, ves qué días hay, marcas los
+que quieras, les pones nombre de evento, revisas el plan e importas.
+
+Los archivos se descargan **directamente a tu fototeca**, sin copias intermedias. Cuando
+el origen abarca meses (la carpeta de un móvil suele tener cientos de días) aparece un
+filtro para marcar y desmarcar días por rango de fechas.
+
+> Del móvil no se borra nada, ni siquiera con «borrar del origen» activado: sobre MTP solo
+> se puede verificar el tamaño, no el checksum, y eso no basta para destruir el único
+> ejemplar. Bórralas desde el móvil cuando las tengas a salvo.
 
 > **El móvil tiene que estar en modo «Transferencia de archivos» (MTP).** Con el cable
 > puesto, baja la barra de notificaciones del móvil, toca la notificación del USB y elige

@@ -180,6 +180,29 @@ def detect() -> list[dict]:
         return []
 
 
+def device_model() -> str:
+    """Modelo que anuncia el propio móvil por MTP, p. ej. `SM-S938B`.
+
+    Lo da el dispositivo sin descargar ni un fichero, y es el mismo identificador que
+    llevan dentro los vídeos (`Samsung:SamsungModel`), así que encaja directamente con la
+    tabla de cámaras conocidas: `SM-S938B` → «Samsung S25 Ultra».
+    """
+    def operation(camera):
+        return str(camera.get_summary())
+
+    try:
+        summary = _retry(operation)
+    except MtpError:
+        return ""
+
+    for line in summary.splitlines():
+        parts = line.split(":", 1)
+        # gphoto2 traduce la etiqueta según el idioma del sistema.
+        if len(parts) == 2 and parts[0].strip().lower() in ("model", "modelo"):
+            return parts[1].strip()
+    return ""
+
+
 def list_folder(path: str = "/", count_files: bool = False) -> dict:
     """Subcarpetas de `path`, y opcionalmente cuántos ficheros tiene.
 
@@ -216,80 +239,102 @@ def list_folder(path: str = "/", count_files: bool = False) -> dict:
     }
 
 
-def list_files(path: str, with_details: bool = True, limit: int = 0) -> list[dict]:
+def list_files(path: str, recursive: bool = True, limit: int = 0,
+               progress_cb=None) -> list[dict]:
     """Ficheros de medios de `path`, con tamaño y fecha de captura.
 
-    `file_get_info` es una llamada por fichero: en una carpeta con miles de fotos eso son
-    varios minutos. Con `with_details=False` solo se devuelven los nombres, que es lo que
-    basta para contar y para elegir.
+    **Recursivo por defecto.** Pedir "los archivos de DCIM" tiene que traer los de
+    `DCIM/Camera`, `DCIM/Screenshots` y demás: en DCIM a secas no suele haber nada suelto,
+    y una lista vacía ahí no le sirve a nadie.
+
+    El coste está en el primer `folder_list_files` de cada carpeta (13 s para las 3322
+    fotos de Camera); después, leer los metadatos de cada fichero sale gratis porque
+    gphoto2 deja la carpeta en caché.
     """
-    def operation(camera):
-        names = _names(camera.folder_list_files(path))
-        if limit:
-            names = names[:limit]
-        if not with_details:
-            return [(name, None) for name in names]
-        details = []
+    entries: list[dict] = []
+
+    def scan(camera, folder):
+        try:
+            names = _names(camera.folder_list_files(folder))
+        except Exception:
+            return
         for name in names:
+            suffix = Path(name).suffix.lower()
+            if suffix not in _PHOTO_EXTS and suffix not in _VIDEO_EXTS:
+                continue
+            size = captured = None
             try:
-                details.append((name, camera.file_get_info(path, name)))
+                info = camera.file_get_info(folder, name)
+                size = getattr(info.file, "size", None)
+                mtime = getattr(info.file, "mtime", 0)
+                if mtime:
+                    captured = datetime.fromtimestamp(mtime).isoformat()
             except Exception:
-                details.append((name, None))
-        return details
+                pass
+            entries.append({
+                "name": name,
+                "folder": folder,
+                "path": f"{folder.rstrip('/')}/{name}",
+                "category": "video" if suffix in _VIDEO_EXTS else "photo",
+                "size": size,
+                "captured": captured,
+            })
+            if limit and len(entries) >= limit:
+                return
 
-    entries = []
-    for name, info in _retry(operation):
-        suffix = Path(name).suffix.lower()
-        if suffix not in _PHOTO_EXTS and suffix not in _VIDEO_EXTS:
-            continue
-        entry = {
-            "name": name,
-            "path": f"{path.rstrip('/')}/{name}",
-            "category": "video" if suffix in _VIDEO_EXTS else "photo",
-            "size": None,
-            "captured": None,
-        }
-        if info is not None:
-            entry["size"] = getattr(info.file, "size", None)
-            mtime = getattr(info.file, "mtime", 0)
-            if mtime:
-                entry["captured"] = datetime.fromtimestamp(mtime).isoformat()
-        entries.append(entry)
+        if not recursive:
+            return
+        try:
+            children = _names(camera.folder_list_folders(folder))
+        except Exception:
+            return
+        for child in sorted(children, key=str.lower):
+            if child.lower() in _NOISE or (limit and len(entries) >= limit):
+                continue
+            if progress_cb:
+                progress_cb(f"{folder.rstrip('/')}/{child}", len(entries))
+            scan(camera, f"{folder.rstrip('/')}/{child}")
 
+    def operation(camera):
+        if progress_cb:
+            progress_cb(path, 0)
+        scan(camera, path)
+        return entries
+
+    _retry(operation)
     entries.sort(key=lambda e: e["captured"] or "", reverse=True)
     return entries
 
 
-def download(folder: str, names: list[str], destination: Path, progress_cb=None) -> list[Path]:
-    """Descarga ficheros concretos de una carpeta del móvil al disco.
+def fetch(folder: str, name: str, target: Path, expected_size: int | None = None) -> int:
+    """Descarga **un** fichero del móvil a su ruta final. Devuelve los bytes escritos.
 
-    De uno en uno a propósito: permite informar del progreso y que un fichero ilegible no
-    tumbe toda la importación.
+    Se escribe a `.parcial` y se renombra al terminar, igual que `copier.py` hace con las
+    tarjetas: si se desconecta el cable a mitad, en el destino no queda un fichero
+    truncado con aspecto de completo.
     """
     gp = _gphoto()
-    destination = Path(destination)
-    destination.mkdir(parents=True, exist_ok=True)
-    saved = []
+    target = Path(target)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(target.name + ".parcial")
 
-    for index, name in enumerate(names, start=1):
-        target = destination / name
-        try:
-            def operation(camera, name=name, target=target):
-                camera_file = camera.file_get(folder, name, gp.GP_FILE_TYPE_NORMAL)
-                # Se escribe a un temporal y se renombra: una desconexión a mitad no debe
-                # dejar un fichero truncado con aspecto de completo (mismo criterio que
-                # `copier.py` para las tarjetas).
-                partial = target.with_name(target.name + ".parcial")
-                camera_file.save(str(partial))
-                partial.replace(target)
-                return target
+    def operation(camera):
+        camera_file = camera.file_get(folder, name, gp.GP_FILE_TYPE_NORMAL)
+        camera_file.save(str(partial))
+        return partial
 
-            _retry(operation)
-            if target.is_file():
-                saved.append(target)
-        except Exception:
-            pass
-        if progress_cb:
-            progress_cb(index, len(names), name)
-
-    return saved
+    try:
+        _retry(operation)
+        written = partial.stat().st_size
+        # No hay checksum del lado del móvil con el que comparar, así que el tamaño
+        # exacto que anuncia MTP es la única verificación posible.
+        if expected_size and written != expected_size:
+            partial.unlink(missing_ok=True)
+            raise MtpError(
+                f"{name}: se esperaban {expected_size} bytes y llegaron {written}."
+            )
+        partial.replace(target)
+        return written
+    except Exception:
+        partial.unlink(missing_ok=True)
+        raise
