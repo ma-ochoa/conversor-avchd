@@ -1,0 +1,27 @@
+{% extends "_whatsapp_base.html" %}
+{% block content %}
+<section>
+  <h2>Contactos</h2>
+  <p class="muted">Esta lista no existe como tal dentro de WhatsApp: se reconstruye de la
+  tabla <code>jid</code> de la base de datos.</p>
+
+  <div id="explicacion-jid" class="block"></div>
+
+  <div class="path-row">
+    <input id="busca" type="search" placeholder="Buscar por nombre o número…" autocomplete="off">
+    <label><input type="checkbox" id="todos"> Incluir los que nunca han escrito</label>
+  </div>
+  <p id="contactos-resumen" class="muted"></p>
+
+  <table id="tabla-contactos" class="compacta">
+    <thead><tr><th>Nombre</th><th>Número</th><th>Mensajes</th><th>Tipo</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+  <p id="contactos-mas" class="muted"></p>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='whatsapp_comun.js') }}"></script>
+<script src="{{ url_for('static', filename='whatsapp_contactos.js') }}"></script>
+{% endblock %}

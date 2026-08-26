@@ -38,3 +38,11 @@ venv/
 
 # Configuración local de Claude Code
 .claude/
+
+# Datos de WhatsApp: bases descifradas, copias cifradas y registros. Nunca al repo —
+# msgstore.db son TODAS las conversaciones en claro.
+whatsapp-datos/
+*.crypt15
+*.crypt14
+msgstore*.db
+wa.db

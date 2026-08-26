@@ -240,7 +240,8 @@ def list_folder(path: str = "/", count_files: bool = False) -> dict:
 
 
 def list_files(path: str, recursive: bool = True, limit: int = 0,
-               progress_cb=None) -> list[dict]:
+               progress_cb=None, extensions: set[str] | None = None,
+               skip_noise: bool = True) -> list[dict]:
     """Ficheros de medios de `path`, con tamaño y fecha de captura.
 
     **Recursivo por defecto.** Pedir "los archivos de DCIM" tiene que traer los de
@@ -250,8 +251,14 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
     El coste está en el primer `folder_list_files` de cada carpeta (13 s para las 3322
     fotos de Camera); después, leer los metadatos de cada fichero sale gratis porque
     gphoto2 deja la carpeta en caché.
+
+    `extensions` cambia qué se considera un fichero interesante; por defecto, fotos y
+    vídeos. WhatsApp lo usa para llevarse también notas de voz (.opus) y documentos, que
+    no son medios de cámara pero sí parte de la copia de seguridad. `skip_noise` se apaga
+    para bajar por rutas que el explorador esconde a propósito, como `Android/`.
     """
     entries: list[dict] = []
+    allowed = extensions if extensions is not None else (_PHOTO_EXTS | _VIDEO_EXTS)
 
     def scan(camera, folder):
         try:
@@ -260,7 +267,7 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
             return
         for name in names:
             suffix = Path(name).suffix.lower()
-            if suffix not in _PHOTO_EXTS and suffix not in _VIDEO_EXTS:
+            if allowed and suffix not in allowed:
                 continue
             size = captured = None
             try:
@@ -289,7 +296,7 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
         except Exception:
             return
         for child in sorted(children, key=str.lower):
-            if child.lower() in _NOISE or (limit and len(entries) >= limit):
+            if (skip_noise and child.lower() in _NOISE) or (limit and len(entries) >= limit):
                 continue
             if progress_cb:
                 progress_cb(f"{folder.rstrip('/')}/{child}", len(entries))

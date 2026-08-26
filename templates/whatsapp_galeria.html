@@ -1,0 +1,35 @@
+{% extends "_whatsapp_base.html" %}
+{% block content %}
+<section class="visor">
+  <aside class="panel-chats">
+    <input id="busca-chat" type="search" placeholder="Buscar conversación…" autocomplete="off">
+    <p id="galeria-resumen" class="muted"></p>
+    <ul id="lista-chats" class="lista-chats"></ul>
+  </aside>
+
+  <div class="panel-conversacion">
+    <div class="barra-galeria" style="padding-inline: 1rem;">
+      <strong id="galeria-titulo">Elige una conversación</strong>
+      <span id="galeria-datos" class="muted"></span>
+      <label><input type="checkbox" id="solo-disco" checked> Solo lo que está en el ordenador</label>
+      <span style="flex:1"></span>
+      <span id="elegidos" class="muted"></span>
+      <button id="elegir-todo">Elegir todo</button>
+      <button id="borrar" class="peligro" disabled>Borrar del ordenador</button>
+    </div>
+    <div id="rejilla" class="rejilla" style="overflow-y:auto; padding: 0 1rem 1rem;"></div>
+  </div>
+</section>
+
+<div id="visor-imagen" class="visor-imagen hidden">
+  <button id="cerrar-visor" title="Cerrar">✕</button>
+  <img id="visor-img" alt="">
+  <p id="visor-pie"></p>
+  <p id="visor-donde" class="muted"></p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='whatsapp_comun.js') }}"></script>
+<script src="{{ url_for('static', filename='whatsapp_galeria.js') }}"></script>
+{% endblock %}

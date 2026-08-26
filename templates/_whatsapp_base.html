@@ -1,0 +1,22 @@
+{# Armazón común de la sección WhatsApp: submenú + cabecera.
+   Al extraer el paquete a una app independiente, este fichero pasa a ser su _base. #}
+{% extends "_base.html" %}
+{% block title %}WhatsApp — {{ subtitulo|default("Conversor de vídeo") }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='whatsapp.css') }}">
+{% endblock %}
+
+{% block page_header %}
+<h1>💬 WhatsApp</h1>
+<nav class="subnav">
+  <a href="/whatsapp"            class="{{ 'activo' if sub == 'sync' else '' }}">Sincronización</a>
+  <a href="/whatsapp/chats"      class="{{ 'activo' if sub == 'chats' else '' }}">Conversaciones</a>
+  <a href="/whatsapp/galeria"    class="{{ 'activo' if sub == 'galeria' else '' }}">Galería</a>
+  <a href="/whatsapp/contactos"  class="{{ 'activo' if sub == 'contactos' else '' }}">Contactos</a>
+</nav>
+<p id="wa-aviso-base" class="aviso hidden">
+  No hay ninguna base de datos descifrada todavía.
+  <a href="/whatsapp">Ve a Sincronización</a> para traerla del móvil y descifrarla.
+</p>
+{% endblock %}

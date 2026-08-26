@@ -75,6 +75,10 @@ from importer.nas_jobs import get_upload_job, start_upload
 from importer.plan import build_plan, free_space
 from importer.sources import describe_source, detect_sources
 from importer.thumbs import get_phone_thumbnail, get_thumbnail
+import whatsapp as wa
+from whatsapp import (backup as wa_backup, chats as wa_chats,
+                      galeria as wa_galeria, jobs as wa_jobs,
+                      media as wa_media, sync as wa_sync)
 
 app = Flask(__name__)
 
@@ -84,6 +88,7 @@ _MEDIA_EXTS = {".mp4", ".mov", ".jpg", ".jpeg", ".png", ".gif"}
 # solo maneja el identificador, en vez de reenviar el listado completo en cada paso.
 _scans: dict[str, dict] = {}
 _MAX_SCANS = 5
+
 
 
 @app.route("/")
@@ -835,6 +840,346 @@ def importacion_nas_upload():
 @app.route("/api/importacion/nas-status/<job_id>")
 def importacion_nas_status(job_id):
     job = get_upload_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+
+# =============================================================================
+# WhatsApp
+#
+# Todo bajo /whatsapp y /api/whatsapp, hablando solo con el paquete `whatsapp`.
+# Está así para poder sacarlo entero a una app aparte: al extraerlo, estas rutas
+# se van con él y aquí no queda nada. Ver whatsapp/__init__.py.
+# =============================================================================
+
+_wa_scans: dict[str, dict] = {}
+_WA_MAX_SCANS = 5
+
+
+def _wa_error(exc: Exception, codigo: int = 400):
+    return jsonify({"error": str(exc)}), codigo
+
+
+# ------------------------------------------------------------------------ páginas
+
+@app.route("/whatsapp")
+def whatsapp_page():
+    return render_template("whatsapp_sync.html", active="whatsapp", sub="sync")
+
+
+@app.route("/whatsapp/chats")
+def whatsapp_chats_page():
+    return render_template("whatsapp_chats.html", active="whatsapp", sub="chats")
+
+
+@app.route("/whatsapp/galeria")
+def whatsapp_galeria_page():
+    return render_template("whatsapp_galeria.html", active="whatsapp", sub="galeria")
+
+
+@app.route("/whatsapp/contactos")
+def whatsapp_contactos_page():
+    return render_template("whatsapp_contactos.html", active="whatsapp", sub="contactos")
+
+
+# ------------------------------------------------------------------ estado general
+
+@app.route("/api/whatsapp/estado")
+def whatsapp_estado():
+    cfg = wa.config.load_config()
+    datos = {
+        **cfg,
+        "all_kinds": [{"key": k["key"], "label": k["label"], "default": k["default"]}
+                      for k in wa_media.KINDS],
+        "sync": wa_sync.estado(),
+        "runs": wa.history.runs(),
+    }
+    try:
+        datos["db"] = wa_chats.resumen_chats()
+    except wa_chats.SinBaseDeDatos:
+        datos["db"] = None
+    return jsonify(datos)
+
+
+@app.route("/api/whatsapp/config", methods=["POST"])
+def whatsapp_guarda_config():
+    data = request.get_json(force=True)
+    permitido = {k: v for k, v in data.items() if k in ("destination", "kinds")}
+    return jsonify(wa.config.save_config(permitido))
+
+
+# ---------------------------------------------------------------- sincronización
+
+@app.route("/api/whatsapp/sync", methods=["POST"])
+def whatsapp_sync():
+    data = request.get_json(silent=True) or {}
+    kinds = data.get("kinds") if isinstance(data.get("kinds"), list) else None
+    return jsonify({"job_id": wa_sync.start(
+        kinds=kinds, destino=data.get("destination"),
+        con_medios=data.get("con_medios", True),
+        con_base=data.get("con_base", True),
+    )})
+
+
+@app.route("/api/whatsapp/sync/<job_id>")
+def whatsapp_sync_estado(job_id):
+    job = wa_sync.get_job(job_id) or wa_jobs.get_job(job_id)
+    if not job:
+        return jsonify({"error": "Trabajo no encontrado"}), 404
+    return jsonify(job)
+
+
+@app.route("/api/whatsapp/backups")
+def whatsapp_backups():
+    try:
+        return jsonify(wa_backup.busca_copias())
+    except (wa_media.WhatsAppNotFound, wa_backup.BackupError) as exc:
+        return _wa_error(exc, 404)
+    except Exception as exc:
+        return _wa_error(exc)
+
+
+@app.route("/api/whatsapp/decrypt", methods=["POST"])
+def whatsapp_decrypt():
+    """La clave llega por POST, se usa y se descarta.
+
+    **No se guarda en ningún sitio**: ni en la configuración, ni en un registro, ni
+    vuelve al navegador. Flask no escribe los cuerpos de las peticiones en su log.
+    """
+    clave = (request.get_json(silent=True) or {}).get("key", "")
+    try:
+        resultado = wa_backup.descifra_todo(clave)
+        # Los índices se crean aquí y no la primera vez que alguien abre los chats: son
+        # ~45 s sobre una base de 600.000 mensajes, y pagarlos en mitad de una consulta
+        # daría la sensación de que la aplicación se ha colgado.
+        indices = wa_chats.prepara()
+        return jsonify({"ok": True, "resultado": resultado, "indices": indices,
+                        "resumen": wa_chats.resumen_chats()})
+    except wa_backup.ClaveInvalida as exc:
+        return jsonify({"error": str(exc), "bad_key": True}), 400
+    except wa_backup.BackupError as exc:
+        return _wa_error(exc)
+    finally:
+        del clave
+
+
+# ------------------------------------------------------------ visor de conversaciones
+
+@app.route("/api/whatsapp/chats")
+def whatsapp_lista_chats():
+    try:
+        return jsonify(wa_chats.lista_chats(
+            busca=request.args.get("q", ""),
+            limit=int(request.args.get("limit", 200)),
+            offset=int(request.args.get("offset", 0)),
+        ))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/chat/<int:chat_id>/mensajes")
+def whatsapp_mensajes(chat_id):
+    antes = request.args.get("antes_de", type=int)
+    try:
+        datos = wa_chats.mensajes(chat_id, antes_de=antes,
+                                  limit=int(request.args.get("limit", 60)))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+    # Se resuelve dónde está cada medio en el ordenador para que el navegador pueda
+    # pedirlo. La base no lo sabe: solo guarda la ruta que tenía en el móvil.
+    indice = wa_galeria.indice_local()
+    for m in datos["mensajes"]:
+        if m["medio"] and m["medio"]["nombre"]:
+            local = indice.get(m["medio"]["nombre"])
+            m["medio"]["local"] = local if local and Path(local).is_file() else None
+    return jsonify(datos)
+
+
+@app.route("/api/whatsapp/contactos")
+def whatsapp_contactos():
+    try:
+        return jsonify(wa_chats.contactos(
+            busca=request.args.get("q", ""),
+            limit=int(request.args.get("limit", 200)),
+            offset=int(request.args.get("offset", 0)),
+            solo_con_mensajes=request.args.get("todos") != "1",
+        ))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/jids")
+def whatsapp_jids():
+    try:
+        return jsonify(wa_chats.estadisticas_jid())
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/eliminados")
+def whatsapp_eliminados():
+    """Si de los mensajes borrados queda algo recuperable. Se comprueba, no se supone."""
+    try:
+        return jsonify(wa_chats.hay_texto_borrado())
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+# --------------------------------------------------------------------- galería
+
+@app.route("/api/whatsapp/galeria/chats")
+def whatsapp_galeria_chats():
+    try:
+        return jsonify(wa_galeria.chats_con_medios(
+            solo_visuales=request.args.get("todos") != "1"))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/galeria/chat/<int:chat_id>")
+def whatsapp_galeria_chat(chat_id):
+    try:
+        return jsonify(wa_galeria.medios_de_chat(
+            chat_id,
+            solo_visuales=request.args.get("todos") != "1",
+            solo_en_disco=request.args.get("en_disco") == "1",
+            limit=int(request.args.get("limit", 300)),
+            offset=int(request.args.get("offset", 0)),
+        ))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+    except ValueError as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/galeria/donde")
+def whatsapp_galeria_donde():
+    """Búsqueda cruzada: en qué conversaciones aparece este fichero."""
+    nombre = request.args.get("nombre", "")
+    if not nombre:
+        return jsonify({"error": "Falta el nombre del fichero."}), 400
+    try:
+        return jsonify(wa_galeria.donde_esta(nombre))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/galeria/repetidos")
+def whatsapp_galeria_repetidos():
+    try:
+        return jsonify(wa_galeria.repetidos(
+            minimo=int(request.args.get("minimo", 2)),
+            limit=int(request.args.get("limit", 200))))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
+@app.route("/api/whatsapp/galeria/borrar", methods=["POST"])
+def whatsapp_galeria_borrar():
+    rutas = (request.get_json(force=True) or {}).get("rutas") or []
+    if not isinstance(rutas, list) or not rutas:
+        return jsonify({"error": "No se ha indicado qué borrar."}), 400
+    return jsonify(wa_galeria.borra([str(r) for r in rutas]))
+
+
+@app.route("/api/whatsapp/archivo")
+def whatsapp_archivo():
+    """Sirve un medio ya copiado al ordenador.
+
+    **Solo dentro de la carpeta de destino.** La ruta llega desde el navegador, y sin
+    esta comprobación bastaría pedir `?ruta=/etc/passwd` para leer cualquier fichero del
+    equipo. Se compara la ruta *resuelta* (con enlaces simbólicos deshechos) para que un
+    enlace dentro del destino tampoco sirva de puente hacia fuera.
+    """
+    ruta = request.args.get("ruta", "")
+    if not ruta:
+        abort(404)
+    raiz = Path(wa.config.load_config()["destination"]).expanduser().resolve()
+    try:
+        destino = Path(ruta).expanduser().resolve(strict=True)
+    except OSError:
+        abort(404)
+    if not destino.is_relative_to(raiz) or not destino.is_file():
+        abort(403)
+    return send_file(destino, conditional=True)
+
+
+# --------------------------------------------------------- medios: escaneo y copia
+
+def _wa_kinds(data: dict) -> list[str] | None:
+    kinds = data.get("kinds")
+    return list(kinds) if isinstance(kinds, list) else None
+
+
+@app.route("/api/whatsapp/scan", methods=["POST"])
+def whatsapp_scan():
+    data = request.get_json(silent=True) or {}
+    kinds = _wa_kinds(data)
+    try:
+        if data.get("path"):
+            scan = wa_media.scan_folder(Path(data["path"]).expanduser(), kinds=kinds)
+        else:
+            scan = wa_media.scan_phone(kinds=kinds)
+    except wa_media.WhatsAppNotFound as exc:
+        return _wa_error(exc, 404)
+    except Exception as exc:
+        return jsonify({"error": f"No se pudo leer WhatsApp: {exc}"}), 400
+
+    scan_id = uuid.uuid4().hex
+    _wa_scans[scan_id] = scan
+    for stale in list(_wa_scans)[:-_WA_MAX_SCANS]:
+        _wa_scans.pop(stale, None)
+    return jsonify({"scan_id": scan_id, "source": scan["source"], "origin": scan["origin"],
+                    "kinds": scan["kinds"], "totals": scan["totals"]})
+
+
+def _wa_plan(data: dict):
+    scan = _wa_scans.get(data.get("scan_id", ""))
+    if scan is None:
+        return None, (jsonify({"error": "El escaneo ha caducado. Vuelve a buscar."}), 404)
+    destino = data.get("destination") or wa.config.load_config()["destination"]
+    plan = wa_media.build_plan(
+        scan, destino, kinds=_wa_kinds(data),
+        already_imported=wa.history.claves_copiadas(),
+        skip_duplicates=bool(data.get("skip_duplicates", True)))
+    return plan, None
+
+
+@app.route("/api/whatsapp/plan", methods=["POST"])
+def whatsapp_plan():
+    plan, error = _wa_plan(request.get_json(force=True))
+    if error:
+        return error
+    return jsonify({"destination": plan["destination"], "tree": plan["tree"],
+                    "totals": plan["totals"], "free_bytes": free_space(plan["destination"])})
+
+
+@app.route("/api/whatsapp/copy", methods=["POST"])
+def whatsapp_copy():
+    data = request.get_json(force=True)
+    plan, error = _wa_plan(data)
+    if error:
+        return error
+    if not plan["items"]:
+        return jsonify({"error": "No hay nada que copiar con los tipos elegidos."}), 400
+    libre = free_space(plan["destination"])
+    if libre is not None and libre < plan["totals"]["bytes"]:
+        return jsonify({"error":
+            f"No hay espacio suficiente: hacen falta {plan['totals']['bytes'] / 1e9:.1f} GB "
+            f"y quedan {libre / 1e9:.1f} GB."}), 400
+    wa.config.save_config({"destination": plan["destination"],
+                           "kinds": _wa_kinds(data) or []})
+    scan = _wa_scans.get(data.get("scan_id", ""), {})
+    return jsonify({"job_id": wa_jobs.start_media(plan["items"], scan.get("source", "")),
+                    "totals": plan["totals"]})
+
+
+@app.route("/api/whatsapp/job/<job_id>")
+def whatsapp_job(job_id):
+    job = wa_jobs.get_job(job_id) or wa_sync.get_job(job_id)
     if not job:
         return jsonify({"error": "Trabajo no encontrado"}), 404
     return jsonify(job)

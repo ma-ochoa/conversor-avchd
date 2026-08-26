@@ -1,0 +1,38 @@
+{% extends "_whatsapp_base.html" %}
+{% block content %}
+<section class="visor">
+  <aside class="panel-chats">
+    <input id="busca-chat" type="search" placeholder="Buscar conversación…" autocomplete="off">
+    <p id="chats-resumen" class="muted"></p>
+    <ul id="lista-chats" class="lista-chats"></ul>
+  </aside>
+
+  <div class="panel-conversacion">
+    <header id="cabecera-chat" class="cabecera-chat hidden">
+      <div>
+        <strong id="chat-nombre"></strong>
+        <span id="chat-datos" class="muted"></span>
+      </div>
+      <label class="ver-eliminados">
+        <input type="checkbox" id="ver-eliminados">
+        Ver mensajes eliminados
+      </label>
+    </header>
+
+    <div id="hilo" class="hilo">
+      <p class="vacio">Elige una conversación de la izquierda.</p>
+    </div>
+  </div>
+</section>
+
+<div id="visor-imagen" class="visor-imagen hidden">
+  <button id="cerrar-visor" title="Cerrar">✕</button>
+  <img id="visor-img" alt="">
+  <p id="visor-pie"></p>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='whatsapp_comun.js') }}"></script>
+<script src="{{ url_for('static', filename='whatsapp_chats.js') }}"></script>
+{% endblock %}

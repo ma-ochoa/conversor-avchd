@@ -1,0 +1,98 @@
+{% extends "_whatsapp_base.html" %}
+{% block content %}
+
+<section>
+  <h2>Sincronizar con el móvil</h2>
+  <p class="muted">Trae de una vez las fotos nuevas <strong>y</strong> la base de datos de
+  conversaciones. Van juntas a propósito: los archivos sin la base son ficheros sueltos sin
+  contexto, y la base sin los archivos es una lista de cosas que no se pueden ver.</p>
+
+  <div class="path-row">
+    <input id="wa-dest" type="text" placeholder="Carpeta de destino">
+    <button id="wa-dest-btn">📁 Cambiar…</button>
+  </div>
+
+  <table id="wa-tipos" class="compacta">
+    <thead><tr><th>Traer</th><th>Tipo</th></tr></thead>
+    <tbody></tbody>
+  </table>
+
+  <div class="paso">
+    <button id="wa-sync" class="primary">Sincronizar ahora</button>
+    <span id="wa-sync-estado" class="status-text"></span>
+  </div>
+
+  <div id="wa-progreso" class="hidden block">
+    <ol id="wa-fases" class="fases"></ol>
+    <progress id="wa-barra" max="1" value="0"></progress>
+    <p id="wa-detalle" class="muted"></p>
+    <ul id="wa-avisos" class="warn-list"></ul>
+  </div>
+</section>
+
+<section>
+  <h2>Descifrar la base de datos</h2>
+  <p class="muted">La clave hace falta en cada sincronización, porque la copia que se trae
+  del móvil viene cifrada. <strong>No se guarda</strong>.</p>
+
+  <details id="wa-instrucciones">
+    <summary>Cómo preparar el móvil (leer antes de la primera vez)</summary>
+    <div class="instrucciones">
+      <p>La base de datos vive en el almacenamiento privado de WhatsApp, donde no llega nadie sin
+      <em>root</em>. No es cuestión de permisos: cada app de Android corre bajo su propio usuario de
+      Linux y el sistema corta la lectura antes de mirar ningún permiso. Ni una app propia, ni
+      <code>adb</code>, ni el modo desarrollador cambian eso.</p>
+
+      <p>Lo que <strong>sí</strong> sale del móvil son las copias de seguridad:</p>
+      <table class="tabla-formatos">
+        <thead><tr><th>Formato</th><th>Se cifra con</th><th>¿Sirve?</th></tr></thead>
+        <tbody>
+          <tr><td><code>.crypt14</code></td><td>Una clave guardada dentro de la app</td>
+              <td class="no">No — haría falta root</td></tr>
+          <tr><td><code>.crypt15</code></td><td>Tu clave de 64 dígitos</td>
+              <td class="si">Sí</td></tr>
+        </tbody>
+      </table>
+
+      <ol>
+        <li><strong>WhatsApp → Ajustes → Chats → Copia de seguridad →
+        Copia de seguridad cifrada de extremo a extremo → Activar</strong>.</li>
+        <li>Elegir <strong>«Usar clave de cifrado de 64 dígitos»</strong>, no contraseña.</li>
+        <li><strong>Guardar esa clave en un gestor de contraseñas antes de continuar.</strong></li>
+        <li>Pulsar <strong>«Guardar»</strong> para forzar una copia nueva.</li>
+        <li>Conectar el móvil por USB en modo <strong>Transferencia de archivos (MTP)</strong>.</li>
+      </ol>
+      <p class="aviso">⚠️ Si pierdes esa clave y no pusiste contraseña, tu copia de seguridad queda
+      irrecuperable para siempre — ni WhatsApp puede restaurarla.</p>
+    </div>
+  </details>
+
+  <div class="paso">
+    <label for="wa-clave">Clave de cifrado de 64 dígitos</label>
+    <div class="path-row">
+      <input id="wa-clave" type="password" autocomplete="off" spellcheck="false"
+             placeholder="Pega aquí los 64 dígitos (los espacios dan igual)">
+      <button id="wa-descifrar" class="primary">Descifrar</button>
+    </div>
+    <p class="hint">Se usa y se descarta: no queda en la configuración, ni en ningún registro,
+    ni vuelve al navegador. El campo se vacía solo al terminar.</p>
+    <p id="wa-descifrar-estado" class="status-text"></p>
+  </div>
+
+  <div id="wa-resumen-db" class="hidden block">
+    <h3>Base de datos lista</h3>
+    <p id="wa-db-info" class="muted"></p>
+    <p><a href="/whatsapp/chats">Ver las conversaciones →</a></p>
+  </div>
+</section>
+
+<section>
+  <h2>Estado actual</h2>
+  <table id="wa-estado" class="compacta"><tbody></tbody></table>
+</section>
+{% endblock %}
+
+{% block extra_scripts %}
+<script src="{{ url_for('static', filename='whatsapp_comun.js') }}"></script>
+<script src="{{ url_for('static', filename='whatsapp_sync.js') }}"></script>
+{% endblock %}

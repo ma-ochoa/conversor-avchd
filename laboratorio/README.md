@@ -110,3 +110,14 @@ unificando tamaños al techo que no obliga a ampliar ninguna.
 
 `verify.py` es el que más veces salvó el trabajo: pinta el círculo detectado encima de
 la imagen. Casi todos los fallos de detección se vieron ahí antes que en ningún número.
+
+## whatsapp/
+
+| Script | Qué hace |
+|---|---|
+| `descifra.py` | Descifra `msgstore.db.crypt15` con la clave de 64 dígitos y resume qué hay dentro |
+
+Lo normal es hacerlo desde la app (sección **WhatsApp**), que además descarga la copia
+del móvil. Esto queda para cuando interesa una terminal: probar otra copia, un fichero
+traído a mano, o automatizarlo. La lógica vive en `whatsapp/backup.py`; el script solo
+pide la clave sin hacer eco de ella.

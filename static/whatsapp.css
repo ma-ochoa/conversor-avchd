@@ -1,0 +1,202 @@
+/* Estilos propios de la sección de WhatsApp. Van aparte de style.css para que al
+   extraer el paquete a una app independiente se lleve también su hoja. */
+
+.paso { margin: 1rem 0 1.4rem; }
+.paso > label { display: block; margin-bottom: 0.35rem; font-size: 0.9rem; }
+
+#wa-instrucciones {
+  margin: 0.5rem 0 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.9rem;
+}
+#wa-instrucciones summary { cursor: pointer; font-weight: 600; }
+.instrucciones { margin-top: 0.8rem; font-size: 0.88rem; line-height: 1.5; }
+.instrucciones ol { padding-left: 1.2rem; }
+.instrucciones li { margin: 0.3rem 0; }
+
+.tabla-formatos { margin: 0.8rem 0; width: auto; }
+.tabla-formatos td.no { color: var(--danger, #e06c6c); }
+.tabla-formatos td.si { color: var(--ok, #6cc06c); }
+
+.aviso {
+  margin-top: 0.9rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid var(--danger, #e06c6c);
+  background: rgba(224, 108, 108, 0.08);
+}
+
+/* La fila de una copia que no sirve (crypt14) se apaga, pero se sigue viendo: saber que
+   está y que no vale es justo lo que explica por qué hay que activar el cifrado. */
+tr.inservible { opacity: 0.5; }
+
+#wa-clave { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.02em; }
+
+progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
+
+/* ===================================================================== submenú */
+
+.subnav { display: flex; gap: 0.3rem; margin: 0.6rem 0 0; flex-wrap: wrap; }
+.subnav a {
+  padding: 0.35rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.88rem;
+  color: var(--muted);
+  text-decoration: none;
+  border: 1px solid transparent;
+}
+.subnav a:hover { color: var(--fg); border-color: var(--border); }
+.subnav a.activo { background: var(--accent); color: #fff; }
+
+/* ============================================================ visor de chats */
+
+/* Dos paneles fijos con scroll propio: la lista no debe moverse al leer el hilo, y el
+   hilo tiene que poder crecer hacia arriba sin arrastrar la página entera. */
+.visor {
+  display: grid;
+  grid-template-columns: minmax(240px, 340px) 1fr;
+  gap: 1px;
+  height: calc(100vh - 190px);
+  min-height: 420px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.panel-chats { background: var(--panel, #1b1f24); display: flex; flex-direction: column; min-width: 0; }
+.panel-chats > input[type=search] { margin: 0.6rem; }
+.panel-chats > .muted { margin: 0 0.75rem 0.4rem; font-size: 0.78rem; }
+
+.lista-chats { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
+.chat-item {
+  display: flex; gap: 0.6rem; align-items: center;
+  padding: 0.55rem 0.75rem;
+  cursor: pointer;
+  border-bottom: 1px solid var(--border);
+}
+.chat-item:hover { background: rgba(255,255,255,0.04); }
+.chat-item.activo { background: rgba(90,150,255,0.14); }
+.chat-avatar {
+  width: 38px; height: 38px; flex: none;
+  border-radius: 50%;
+  background: var(--border);
+  display: grid; place-items: center;
+  font-size: 1.1rem;
+}
+.chat-texto { min-width: 0; flex: 1; }
+.chat-linea1, .chat-linea2 { display: flex; justify-content: space-between; gap: 0.5rem; align-items: baseline; }
+.chat-nombre { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.chat-fecha, .chat-contadores { color: var(--muted); font-size: 0.72rem; white-space: nowrap; flex: none; }
+.chat-ultimo {
+  color: var(--muted); font-size: 0.8rem;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+.panel-conversacion { background: var(--panel, #1b1f24); display: flex; flex-direction: column; min-width: 0; }
+.cabecera-chat {
+  display: flex; justify-content: space-between; align-items: center; gap: 1rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.cabecera-chat .muted { margin-left: 0.6rem; font-size: 0.78rem; }
+.ver-eliminados { font-size: 0.82rem; display: flex; align-items: center; gap: 0.4rem; white-space: nowrap; }
+
+.hilo { flex: 1; overflow-y: auto; padding: 1rem; display: flex; flex-direction: column; gap: 0.35rem; }
+.hilo .vacio { color: var(--muted); text-align: center; margin: auto; }
+
+.separador-dia {
+  align-self: center;
+  margin: 0.6rem 0 0.2rem;
+  padding: 0.15rem 0.7rem;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  color: var(--muted);
+  font-size: 0.72rem;
+}
+.aviso-sistema {
+  align-self: center; text-align: center;
+  max-width: 80%; padding: 0.3rem 0.8rem;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.04);
+  color: var(--muted); font-size: 0.76rem;
+}
+
+/* Las burbujas: propias a la derecha en verde, ajenas a la izquierda en gris. */
+.burbuja {
+  max-width: min(68%, 560px);
+  padding: 0.4rem 0.6rem 0.25rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+.burbuja.mia  { align-self: flex-end;   background: #075e54; }
+.burbuja.suya { align-self: flex-start; background: #2a3138; }
+.burbuja .autor { font-size: 0.76rem; font-weight: 600; color: #7fd1c1; margin-bottom: 0.15rem; }
+.burbuja .citado {
+  border-left: 3px solid rgba(255,255,255,0.35);
+  padding: 0.2rem 0.5rem; margin-bottom: 0.3rem;
+  background: rgba(0,0,0,0.18); border-radius: 4px;
+  font-size: 0.8rem; color: rgba(255,255,255,0.75);
+  max-height: 3.2em; overflow: hidden;
+}
+.burbuja .texto { white-space: pre-wrap; }
+.burbuja .meta { text-align: right; font-size: 0.66rem; color: rgba(255,255,255,0.5); margin-top: 0.1rem; }
+
+.burbuja img.miniatura, .burbuja video.miniatura {
+  display: block; max-width: 100%; max-height: 320px;
+  border-radius: 5px; margin-bottom: 0.25rem; cursor: pointer;
+}
+.burbuja img.miniatura.sticker { max-height: 130px; background: none; }
+.burbuja audio { width: 260px; max-width: 100%; margin: 0.2rem 0; }
+.burbuja .documento { display: block; color: inherit; text-decoration: none; padding: 0.3rem 0; }
+.burbuja .documento .muted { margin-left: 0.4rem; font-size: 0.75rem; }
+.medio-ausente {
+  padding: 0.5rem 0.6rem; margin-bottom: 0.25rem;
+  border: 1px dashed rgba(255,255,255,0.25); border-radius: 5px;
+  font-size: 0.82rem;
+}
+
+/* Eliminados: solo la papelera, hasta que se pida verlos. */
+.burbuja.eliminada { opacity: 0.55; padding: 0.25rem 0.5rem; }
+
+.burbuja.eliminada .detalle-eliminado { display: none; font-size: 0.8rem; margin-top: 0.25rem; }
+.burbuja.eliminada .detalle-eliminado .muted { display: block; font-size: 0.72rem; margin-top: 0.2rem; }
+.hilo.mostrar-eliminados .burbuja.eliminada { opacity: 1; padding: 0.4rem 0.6rem 0.25rem; }
+.hilo.mostrar-eliminados .burbuja.eliminada .marca-eliminado { display: inline; }
+.hilo.mostrar-eliminados .burbuja.eliminada .detalle-eliminado { display: block; }
+
+/* ======================================================== visor de imágenes */
+
+.visor-imagen {
+  position: fixed; inset: 0; z-index: 50;
+  background: rgba(0,0,0,0.88);
+  display: grid; place-items: center; gap: 1rem;
+  padding: 2rem;
+}
+.visor-imagen img { max-width: 92vw; max-height: 82vh; object-fit: contain; }
+.visor-imagen p { color: #ddd; text-align: center; max-width: 60ch; margin: 0; }
+#cerrar-visor {
+  position: absolute; top: 1rem; right: 1.2rem;
+  background: none; border: none; color: #fff; font-size: 1.6rem; cursor: pointer;
+}
+
+/* ================================================================= galería */
+
+.rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
+.celda { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: var(--border); }
+.celda img, .celda video { width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
+.celda .marca { position: absolute; left: 0.3rem; bottom: 0.3rem; font-size: 0.8rem; text-shadow: 0 0 3px #000; }
+.celda input[type=checkbox] { position: absolute; top: 0.3rem; left: 0.3rem; z-index: 2; }
+.celda.ausente { display: grid; place-items: center; color: var(--muted); font-size: 0.75rem; text-align: center; padding: 0.4rem; }
+.celda.elegida { outline: 3px solid var(--accent); outline-offset: -3px; }
+
+.barra-galeria {
+  display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;
+  padding: 0.5rem 0; position: sticky; top: 0; z-index: 3;
+  background: var(--bg, #14181d);
+}
+.peligro { background: #7a2b2b; border-color: #a33; }
+
+table.compacta td, table.compacta th { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
