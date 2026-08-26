@@ -615,20 +615,45 @@ carpeta de origen que se escanea.
     ningún evento), ya que al estar los `<script>` al final del `<body>` el elemento
     `#path-input` ya existe en el DOM en ese punto.
 
-11. **En macOS, listar `~/Desktop` sin permiso TCC NO da error: se queda bloqueado
-    durante muchísimo tiempo.** Comprobado empíricamente: `Path.home()/"Desktop"`
-    responde a `.is_dir()` al instante, pero `.iterdir()` no vuelve (el sistema espera a
-    un diálogo de autorización que en un proceso lanzado sin interfaz puede no llegar a
-    aparecer). Una medición que quedó corriendo en segundo plano acabó devolviendo
-    resultados **a los 5667 s (94 minutos)** — o sea que no es un bloqueo eterno, pero a
-    efectos prácticos lo es: colgaba la petición HTTP entera y con ella la interfaz.
+11. **En macOS, listar una carpeta protegida por TCC (`~/Desktop`, `~/Downloads`,
+    `~/Documents`) sin el permiso concedido NO da error: se queda bloqueada durante
+    muchísimo tiempo.** Comprobado empíricamente: `Path.home()/"Desktop"` responde a
+    `.is_dir()` al instante, pero `.iterdir()` no vuelve (el sistema espera a un diálogo
+    de autorización que en un proceso lanzado sin interfaz puede no llegar a aparecer).
+    Una medición que quedó corriendo en segundo plano acabó devolviendo resultados **a
+    los 5667 s (94 minutos)** — o sea que no es un bloqueo eterno, pero a efectos
+    prácticos lo es: colgaba la petición HTTP entera y con ella la interfaz.
     `~/Downloads` funcionaba desde una terminal ya autorizada y se bloqueaba igual desde
     el proceso Flask, así que depende de qué app lanzó el proceso, no de la carpeta.
-    Solución en `importer/sources.py::_listdir()`: el listado se hace en un hilo daemon
-    del que se desiste a los 3 s, y la carpeta se apunta en `_blocked_folders` para no
-    reintentarla en cada carga de página (la primera llamada tarda ~6 s, las siguientes
-    13 ms). La UI avisa de que hay que dar el permiso. **No basta con un `try/except
-    PermissionError` ni con un deadline comprobado en el bucle: la llamada no vuelve.**
+    **No basta con un `try/except PermissionError` ni con un deadline comprobado dentro
+    del bucle: la llamada no vuelve, no se llega a entrar en el bucle.** La única salida
+    es listar en un hilo daemon del que se pueda desistir, y apuntar la carpeta como
+    bloqueada para no volver a esperar en cada clic. Está resuelto en los dos sitios que
+    listan carpetas:
+    - **Orígenes de importación** — `importer/sources.py::_listdir()`: se desiste a los
+      3 s y la carpeta se apunta en `_blocked_folders` para no reintentarla en cada
+      carga de página (la primera llamada tarda ~6 s, las siguientes 13 ms). La UI avisa
+      de que hay que dar el permiso.
+    - **Explorador de carpetas del resto de la app** — `converter/fs_access.py`, usado
+      por `/api/browse`: mismo hilo daemon con desistimiento a los 3 s (medido: 3,00 s
+      la primera vez, 1,5 ms las siguientes). Devuelve 403 con `blocked: true` y el
+      aviso de dónde conceder el permiso, más un botón "Reintentar" (`?retry=1`) porque
+      el permiso se concede fuera de la app y si no habría que reiniciar el servidor.
+    - **La duplicación entre esos dos es deliberada.** Al arreglar el segundo se valoró
+      compartir el código y se descartó: `importer/` está aislado a propósito (no
+      importa nada de `converter/` ni de Flask) para poder extraerlo algún día como app
+      independiente. Un módulo común tendría que vivir o dentro de `importer/` (y
+      entonces el explorador de carpetas de toda la app se rompería el día que se
+      extraiga) o fuera (y entonces `importer/` dejaría de ser autónomo). Con la
+      restricción de aislamiento sobre la mesa, dos copias son la única estructura que
+      se sostiene; ambos ficheros se apuntan mutuamente en un comentario para que quien
+      toque una toque la otra.
+    - **Pendiente**: el mismo bloqueo sigue expuesto en el escaneo, que no se tocó aquí
+      — `converter/scanner.py::scan_folder()` (`os.walk`) y
+      `converter/montaje_clips.py::list_available_clips()` (`rglob`). Se llega
+      escribiendo la ruta a mano y pulsando "Escanear", sin pasar por `/api/browse`. En
+      Montaje sí está tapado: `loadDirs()` no llama a `setRoot()` si la carpeta viene
+      bloqueada, justo para no colgarse en el `rglob` siguiente.
 12. **En macOS, muchas cosas que parecen un fichero son carpetas llenas de imágenes.**
     Al desbloquear la detección salió que el Escritorio/Descargas del usuario contenía
     `iPhoto.app`, `Cyberduck.app` y similares, y todas se ofrecían como "orígenes"

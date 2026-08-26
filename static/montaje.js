@@ -1,6 +1,7 @@
 const pathInput = document.getElementById("path-input");
 const goBtn = document.getElementById("go-btn");
 const browseBtn = document.getElementById("browse-btn");
+const rootStatus = document.getElementById("root-status");
 
 const projectSection = document.getElementById("project-section");
 const clipsSection = document.getElementById("clips-section");
@@ -66,18 +67,26 @@ function uid() {
 
 // ---------- Navegación de carpetas ----------
 
-async function loadDirs(path) {
-  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+// Devuelve si la carpeta se pudo leer: `setRoot` lista los clips con rglob, y sobre
+// una carpeta sin permiso concedido eso volvería a colgarse — el aviso de /api/browse
+// no serviría de nada si aun así seguimos adelante con esa ruta.
+async function loadDirs(path, retry = false) {
+  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}${retry ? "&retry=1" : ""}`);
   const data = await res.json();
-  if (data.error) return;
+  if (data.error) {
+    showBrowseError(rootStatus, data, () => loadDirs(path, true).then((ok) => ok && setRoot(path)));
+    return false;
+  }
+  clearBrowseError(rootStatus);
   pathInput.value = data.path;
+  return true;
 }
 
 goBtn.addEventListener("click", () => {
-  loadDirs(pathInput.value).then(() => setRoot(pathInput.value));
+  loadDirs(pathInput.value).then((ok) => ok && setRoot(pathInput.value));
 });
 pathInput.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") loadDirs(pathInput.value).then(() => setRoot(pathInput.value));
+  if (e.key === "Enter") loadDirs(pathInput.value).then((ok) => ok && setRoot(pathInput.value));
 });
 
 browseBtn.addEventListener("click", async () => {

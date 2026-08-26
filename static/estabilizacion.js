@@ -40,13 +40,14 @@ function formatStats(stats) {
   return parts.length ? parts.join(" · ") : "—";
 }
 
-async function loadDirs(path) {
-  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+async function loadDirs(path, retry = false) {
+  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}${retry ? "&retry=1" : ""}`);
   const data = await res.json();
   if (data.error) {
-    scanStatus.textContent = data.error;
+    showBrowseError(scanStatus, data, () => loadDirs(path, true));
     return;
   }
+  clearBrowseError(scanStatus);
   pathInput.value = data.path;
   crumb.textContent = data.path;
   dirList.innerHTML = "";

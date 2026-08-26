@@ -8,13 +8,14 @@ const clearBtn = document.getElementById("clear-btn");
 const saveStatus = document.getElementById("save-status");
 const currentWorkingDirEl = document.getElementById("current-working-dir");
 
-async function loadDirs(path) {
-  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}`);
+async function loadDirs(path, retry = false) {
+  const res = await fetch(`/api/browse?path=${encodeURIComponent(path)}${retry ? "&retry=1" : ""}`);
   const data = await res.json();
   if (data.error) {
-    saveStatus.textContent = data.error;
+    showBrowseError(saveStatus, data, () => loadDirs(path, true));
     return;
   }
+  clearBrowseError(saveStatus);
   pathInput.value = data.path;
   crumb.textContent = data.path;
   dirList.innerHTML = "";

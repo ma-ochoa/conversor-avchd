@@ -18,6 +18,7 @@ from converter.avanzada_jobs import (
 from converter.config import get_working_dir, set_working_dir
 from converter.ffmpeg_ops import ToolsMissingError, check_tools
 from converter.fonts import list_system_fonts
+from converter.fs_access import FolderAccessBlockedError, list_subdirs
 from converter.jobs import get_job, start_job
 from converter.montaje_clips import list_available_clips
 from converter.project import (
@@ -120,21 +121,20 @@ def browse():
     if not path.is_dir():
         return jsonify({"error": f"No es una carpeta: {path}"}), 400
 
+    # `retry=1` lo manda el botón "Reintentar" que sale al bloquearse una carpeta:
+    # sirve para volver a probar tras conceder el permiso, sin reiniciar la app.
+    retry = request.args.get("retry") in ("1", "true")
+
     try:
-        entries = []
-        for p in path.iterdir():
-            if p.name.startswith("."):
-                continue
-            try:
-                if p.is_dir():
-                    entries.append(p)
-            except PermissionError:
-                # Alguna carpeta puntual sin acceso (p. ej. .Trash a través del
-                # montaje de Docker en macOS) no debe tumbar el listado entero.
-                continue
-        entries.sort(key=lambda p: p.name.lower())
+        entries = list_subdirs(path, retry_blocked=retry)
+    except FolderAccessBlockedError as exc:
+        # macOS no contesta al listar una carpeta protegida sin permiso concedido; sin
+        # esto la petición no volvería nunca y la página se quedaría colgada.
+        return jsonify({"error": str(exc), "blocked": True}), 403
     except PermissionError:
         return jsonify({"error": f"Sin permiso para leer: {path}"}), 403
+    except OSError as exc:
+        return jsonify({"error": f"No se pudo leer {path}: {exc.strerror or exc}"}), 400
 
     return jsonify({
         "path": str(path),
