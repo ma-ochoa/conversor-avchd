@@ -200,3 +200,17 @@ progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
 .peligro { background: #7a2b2b; border-color: #a33; }
 
 table.compacta td, table.compacta th { padding: 0.3rem 0.6rem; font-size: 0.85rem; }
+
+/* El mensaje al que se ha saltado desde la galería. El destello se apaga solo para no
+   dejar la conversación marcada para siempre. */
+.burbuja.destacada { animation: destello 2.4s ease-out; }
+@keyframes destello {
+  0%, 45% { box-shadow: 0 0 0 3px var(--accent); }
+  100%    { box-shadow: 0 0 0 3px transparent; }
+}
+.visor-imagen a { color: #7fd1c1; }
+
+/* Notas de vídeo: WhatsApp las enseña en círculo, y reconocerlas de un vistazo importa
+   porque no son vídeos normales. */
+video.redonda { border-radius: 50%; aspect-ratio: 1; object-fit: cover; max-width: 220px; }
+.celda video.redonda { max-width: none; border-radius: 50%; }

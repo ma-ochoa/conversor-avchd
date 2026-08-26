@@ -234,7 +234,9 @@ function pintaMedio(m) {
   }
   if (m.tipo === "video" || m.tipo === "gif" || m.tipo === "notas_video") {
     // `#t=0.5`: el fotograma de medio segundo como portada, para que no sea un rectángulo negro.
-    return `<video class="miniatura" src="${url}#t=0.5" controls preload="metadata"></video>`;
+    // Las notas de vídeo son redondas en WhatsApp; se marca el tipo para darles forma.
+    return `<video class="miniatura ${m.tipo === "notas_video" ? "redonda" : ""}"
+                   src="${url}#t=0.5" controls preload="metadata"></video>`;
   }
   if (m.tipo === "audio") {
     return `<audio src="${url}" controls preload="none"></audio>`;
@@ -267,8 +269,62 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") el("visor-imagen").classList.add("hidden");
 });
 
+// ------------------------------------------- salto desde la galería
+
+/** Lee `#chat=123&mensaje=456` de la URL. Es como la galería enlaza aquí. */
+function destinoEnLaUrl() {
+  const trozos = new URLSearchParams(location.hash.slice(1));
+  const chat = parseInt(trozos.get("chat"), 10);
+  const mensaje = parseInt(trozos.get("mensaje"), 10);
+  return chat ? { chat, mensaje: mensaje || null } : null;
+}
+
+/** Abre un chat centrado en un mensaje concreto, en vez de por el final. */
+async function abreEnMensaje(chatId, mensajeId) {
+  chatActual = chatId;
+  el("cabecera-chat").classList.remove("hidden");
+  el("hilo").innerHTML = '<p class="vacio">Buscando ese punto de la conversación…</p>';
+  pintaChats(todosLosChats);
+
+  const datos = await api(
+    `/api/whatsapp/chat/${chatId}/contexto?mensaje=${mensajeId}&alrededor=30`
+  ).catch((e) => {
+    el("hilo").innerHTML = `<p class="vacio">${esc(e.message)}</p>`;
+    return null;
+  });
+  if (!datos) return;
+
+  const info = todosLosChats.find((c) => c.id === chatId) || {};
+  el("chat-nombre").textContent = datos.chat.nombre;
+  el("chat-datos").textContent =
+    `${formatNumero(info.mensajes)} mensajes · ${formatNumero(info.medios)} archivos`;
+
+  el("hilo").innerHTML = "";
+  añadeMensajes(datos.mensajes, false);
+  hayMas = datos.hay_mas;
+  masAntiguo = datos.siguiente;
+
+  // Se resalta y se centra el mensaje al que se venía, que es el sentido del salto.
+  const diana = el("hilo").querySelector(`.burbuja[data-id="${datos.destacado}"]`);
+  if (diana) {
+    diana.classList.add("destacada");
+    diana.scrollIntoView({ block: "center" });
+  }
+}
+
+window.addEventListener("hashchange", () => {
+  const destino = destinoEnLaUrl();
+  if (!destino) return;
+  destino.mensaje ? abreEnMensaje(destino.chat, destino.mensaje) : abreChat(destino.chat);
+});
+
 // ---------------------------------------------------------------- arranque
 
 (async () => {
-  if (await compruebaBase()) cargaChats();
+  if (!(await compruebaBase())) return;
+  await cargaChats();
+  const destino = destinoEnLaUrl();
+  if (destino) {
+    destino.mensaje ? abreEnMensaje(destino.chat, destino.mensaje) : abreChat(destino.chat);
+  }
 })();

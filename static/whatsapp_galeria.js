@@ -115,6 +115,7 @@ function pintaRejilla() {
       ? Object.assign(document.createElement("video"),
                       { src: url + "#t=0.5", preload: "metadata", muted: true })
       : Object.assign(document.createElement("img"), { src: url, loading: "lazy", alt: "" });
+    if (m.tipo === "notas_video") vista.classList.add("redonda");
     vista.addEventListener("click", () => abreVisor(url, m));
 
     const marca = document.createElement("span");
@@ -185,11 +186,16 @@ async function abreVisor(url, m) {
     `/api/whatsapp/galeria/donde?nombre=${encodeURIComponent(m.nombre)}`).catch(() => null);
   if (!datos) { el("visor-donde").textContent = ""; return; }
 
+  // Cada sitio es un enlace al punto exacto de esa conversación: es el salto
+  // «de esta foto al contexto en que se mandó», que es para lo que sirve la galería.
   const sitios = datos.apariciones;
+  const enlaces = sitios.map((a) =>
+    `<a href="/whatsapp/chats#chat=${a.chat_id}&mensaje=${a.mensaje_id}"
+        target="_blank" rel="noopener">${esc(a.chat)} (${formatFecha(a.fecha)})</a>`
+  ).join(" · ");
   el("visor-donde").innerHTML = sitios.length <= 1
-    ? `Solo en esta conversación · ${formatFecha(m.fecha)}`
-    : `Aparece en ${sitios.length} conversaciones: ` +
-      sitios.map((a) => `${esc(a.chat)} (${formatFecha(a.fecha)})`).join(" · ");
+    ? `Ver en la conversación: ${enlaces || "—"}`
+    : `Aparece en ${sitios.length} conversaciones: ${enlaces}`;
 }
 
 el("cerrar-visor").addEventListener("click", () => el("visor-imagen").classList.add("hidden"));

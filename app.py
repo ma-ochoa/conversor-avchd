@@ -998,6 +998,26 @@ def whatsapp_mensajes(chat_id):
     return jsonify(datos)
 
 
+@app.route("/api/whatsapp/chat/<int:chat_id>/contexto")
+def whatsapp_contexto(chat_id):
+    """Salto desde una foto a su punto exacto de la conversación."""
+    mensaje = request.args.get("mensaje", type=int)
+    if not mensaje:
+        return jsonify({"error": "Falta el mensaje al que saltar."}), 400
+    try:
+        datos = wa_chats.contexto(chat_id, mensaje,
+                                  alrededor=int(request.args.get("alrededor", 25)))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+    indice = wa_galeria.indice_local()
+    for m in datos["mensajes"]:
+        if m["medio"] and m["medio"]["nombre"]:
+            local = indice.get(m["medio"]["nombre"])
+            m["medio"]["local"] = local if local and Path(local).is_file() else None
+    return jsonify(datos)
+
+
 @app.route("/api/whatsapp/contactos")
 def whatsapp_contactos():
     try:

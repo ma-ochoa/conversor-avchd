@@ -374,6 +374,42 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
         con.close()
 
 
+def contexto(chat_id: int, mensaje_id: int, alrededor: int = 25) -> dict:
+    """Los mensajes que rodean a uno concreto, para saltar desde una foto a su conversación.
+
+    Es lo que convierte la galería en algo más que un álbum: ver una imagen y poder leer
+    **qué se estaba diciendo alrededor**. Se devuelven `alrededor` mensajes a cada lado y
+    se marca cuál era el buscado.
+
+    Se pagina igual que `mensajes()` para poder seguir subiendo o bajando desde ahí.
+    """
+    con = _con()
+    try:
+        # Se piden los de antes y los de después por separado porque un único BETWEEN
+        # sobre _id no reparte bien: los ids no son contiguos dentro de un chat.
+        antes = con.execute("""
+            SELECT _id FROM message WHERE chat_row_id = ? AND _id <= ?
+             ORDER BY _id DESC LIMIT ?
+        """, (chat_id, mensaje_id, alrededor + 1)).fetchall()
+        despues = con.execute("""
+            SELECT _id FROM message WHERE chat_row_id = ? AND _id > ?
+             ORDER BY _id ASC LIMIT ?
+        """, (chat_id, mensaje_id, alrededor)).fetchall()
+    finally:
+        con.close()
+
+    if not antes:
+        raise SinBaseDeDatos(
+            f"El mensaje {mensaje_id} no está en la conversación {chat_id}.")
+
+    # `mensajes()` pagina hacia atrás desde un tope, así que se pide desde el más nuevo
+    # del tramo y se recorta a la ventana que interesa.
+    tope = (despues[-1]["_id"] if despues else mensaje_id) + 1
+    datos = mensajes(chat_id, antes_de=tope, limit=len(antes) + len(despues))
+    datos["destacado"] = mensaje_id
+    return datos
+
+
 def contactos(busca: str = "", limit: int = 200, offset: int = 0,
               solo_con_mensajes: bool = True) -> dict:
     """La tabla `jid`, que **no es la agenda** — ver el docstring del módulo.
