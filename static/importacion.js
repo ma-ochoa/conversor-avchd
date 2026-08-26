@@ -814,6 +814,7 @@ el("import-btn").addEventListener("click", async () => {
   el("plan-status").textContent = "";
   try {
     const data = await postJson("/api/importacion/start", planPayload());
+    trabajoEnCurso = true;
     el("progress-section").classList.remove("hidden");
     progressBody.innerHTML = "";
     rows.clear();
@@ -825,6 +826,16 @@ el("import-btn").addEventListener("click", async () => {
 });
 
 const rows = new Map();
+
+// Mientras corre una importación o una subida, «Subir pendientes» se queda en gris aunque
+// haya archivos sin subir: lanzar una segunda subida en paralelo mandaría los mismos
+// ficheros dos veces. La etiqueta de al lado explica por qué está desactivado.
+let trabajoEnCurso = false;
+
+// Cada cuántos sondeos (de 800 ms) se refresca el recuento de pendientes mientras hay un
+// trabajo en curso. Antes solo se refrescaba al terminar, y durante toda la subida el
+// panel seguía diciendo que no quedaba nada por subir.
+const REFRESCO_PENDIENTES = 10;
 
 const PHASE_LABELS = {
   copiando: "Copiando y verificando archivos…",
@@ -852,31 +863,41 @@ function ensureRows(items) {
   }
 }
 
-async function pollJob(jobId) {
+async function pollJob(jobId, tick = 0) {
   let job;
   try {
     job = await api(`/api/importacion/status/${jobId}`);
   } catch (err) {
     el("job-summary").textContent = err.message;
     el("import-btn").disabled = false;
+    trabajoEnCurso = false;
+    loadHistory();
     return;
   }
 
   if (rows.size === 0) ensureRows(job.items);
 
-  let done = 0;
+  let copiado = 0;
   for (const item of job.items) {
     const row = rows.get(item.path);
     if (!row) continue;
     row.status.textContent = item.status + (item.error ? `: ${item.error}` : "");
     row.bar.value = item.percent;
-    done += item.percent;
+    copiado += item.percent;
   }
-  el("overall-bar").value = job.items.length ? done / job.items.length : 0;
+
+  // Durante la subida la barra general pasa a medir la subida. Dejándola con el progreso
+  // de la copia se quedaba clavada al 100 % durante todos los minutos que tarda el envío,
+  // y parecía que la importación se había colgado o que no estaba subiendo nada.
+  const subiendo = job.phase === "subiendo" && job.upload.total > 0;
+  el("overall-bar").value = subiendo
+    ? job.upload.done / job.upload.total
+    : (job.items.length ? copiado / job.items.length : 0);
 
   let phase = PHASE_LABELS[job.phase] || job.phase;
-  if (job.phase === "subiendo" && job.upload.total) {
+  if (subiendo) {
     phase += ` (${job.upload.done}/${job.upload.total})`;
+    if (job.upload.current) phase += ` — ${job.upload.current}`;
   }
   el("phase-label").textContent = phase;
 
@@ -907,11 +928,13 @@ async function pollJob(jobId) {
     }
 
     el("import-btn").disabled = false;
+    trabajoEnCurso = false;
     loadHistory();
     return;
   }
 
-  setTimeout(() => pollJob(jobId), 800);
+  if (tick % REFRESCO_PENDIENTES === 0) loadHistory();
+  setTimeout(() => pollJob(jobId, tick + 1), 800);
 }
 
 // ---------------------------------------------------------------------- NAS
@@ -1142,6 +1165,7 @@ el("upload-pending-btn").addEventListener("click", async () => {
   el("upload-pending-btn").disabled = true;
   try {
     const data = await postJson("/api/importacion/nas-upload", {});
+    trabajoEnCurso = true;
     pollUpload(data.job_id);
   } catch (err) {
     el("upload-status").textContent = err.message;
@@ -1149,13 +1173,14 @@ el("upload-pending-btn").addEventListener("click", async () => {
   }
 });
 
-async function pollUpload(jobId) {
+async function pollUpload(jobId, tick = 0) {
   let job;
   try {
     job = await api(`/api/importacion/nas-status/${jobId}`);
   } catch (err) {
     el("upload-status").textContent = err.message;
-    el("upload-pending-btn").disabled = false;
+    trabajoEnCurso = false;
+    loadHistory();
     return;
   }
 
@@ -1163,30 +1188,38 @@ async function pollUpload(jobId) {
 
   if (job.state === "finalizado") {
     el("upload-status").textContent = `Subida completada (${job.done} archivos).`;
-    el("upload-pending-btn").disabled = false;
+    trabajoEnCurso = false;
     loadHistory();
     return;
   }
   if (job.state === "error") {
     el("upload-status").textContent = `Error: ${job.error}`;
-    el("upload-pending-btn").disabled = false;
+    trabajoEnCurso = false;
     loadHistory();
     return;
   }
-  setTimeout(() => pollUpload(jobId), 800);
+  if (tick % REFRESCO_PENDIENTES === 0) loadHistory();
+  setTimeout(() => pollUpload(jobId, tick + 1), 800);
 }
 
 // ----------------------------------------------------------------- Historial
 
 async function loadHistory() {
   const data = await api("/api/importacion/history").catch(() => null);
-  if (!data) return;
+  if (!data) {
+    // Si la consulta falla no se deja el botón bloqueado para siempre: se devuelve al
+    // estado que corresponda por si el usuario quiere reintentar a mano.
+    el("upload-pending-btn").disabled = trabajoEnCurso;
+    return;
+  }
 
   const pending = data.pending_upload.length;
-  el("pending-label").textContent = pending
+  let etiqueta = pending
     ? `${pending} archivo(s) importados siguen sin subir al NAS.`
     : "Todo lo importado está subido al NAS (o no hay nada pendiente).";
-  el("upload-pending-btn").disabled = pending === 0;
+  if (pending && trabajoEnCurso) etiqueta += " Espera a que termine el trabajo en curso.";
+  el("pending-label").textContent = etiqueta;
+  el("upload-pending-btn").disabled = pending === 0 || trabajoEnCurso;
 
   const body = document.querySelector("#history-table tbody");
   body.innerHTML = "";

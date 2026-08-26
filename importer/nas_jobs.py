@@ -5,7 +5,6 @@ subida, sin tener que volver a importar la tarjeta.
 """
 
 import threading
-import time
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -45,28 +44,12 @@ def get_upload_job(job_id: str) -> dict | None:
 def _run(job_id: str, entries: list[dict]) -> None:
     job = _jobs[job_id]
     try:
-        # Se marca **fichero a fichero, según se sube**, no todo al final. Marcarlo al
-        # final significaba que una subida cortada a la mitad —red, cierre de la app, un
-        # error cualquiera— dejaba en cero el registro y volvía a subirlo todo desde el
-        # principio, aunque ya hubiera cientos de archivos en el NAS.
-        por_relativa = {e["dest_relative"]: e["dest"] for e in entries}
-        subidos: list[str] = []
-        ultimo = [time.monotonic()]
+        tracker = history.UploadTracker(entries)
 
         def progress_cb(done, current):
             job["done"] = done
             job["current"] = current
-            dest = por_relativa.get(current)
-            if not dest:
-                return
-            subidos.append(dest)
-            # Se agrupa para no reescribir el historial entero por cada foto, pero
-            # también se vuelca cada pocos segundos: un vídeo grande tarda minutos, y
-            # esperar a juntar un lote dejaría sin registrar todo ese rato.
-            if len(subidos) >= 20 or time.monotonic() - ultimo[0] > 20:
-                history.mark_uploaded(subidos)
-                subidos.clear()
-                ultimo[0] = time.monotonic()
+            tracker.note(current)
 
         try:
             upload_files(
@@ -76,8 +59,7 @@ def _run(job_id: str, entries: list[dict]) -> None:
             )
         finally:
             # Pase lo que pase, lo que sí llegó al NAS queda registrado.
-            if subidos:
-                history.mark_uploaded(subidos)
+            tracker.flush()
 
         job["state"] = "finalizado"
     except NasOtpRequired:

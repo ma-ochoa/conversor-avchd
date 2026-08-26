@@ -198,21 +198,26 @@ def _upload(job: dict) -> None:
         return
 
     job["upload"]["state"] = "en_curso"
+    # Lo subido se apunta según llega, no todo al final: si esto se corta en el archivo
+    # 250 de 257, los 249 anteriores ya cuentan como subidos y no se repiten.
+    tracker = history.UploadTracker(uploaded)
     try:
         def progress_cb(done, current):
             job["upload"]["done"] = done
             job["upload"]["current"] = current
+            tracker.note(current)
 
         upload_files(
             [(Path(i["dest"]), i["dest_relative"]) for i in uploaded],
             load_config()["nas"],
             progress_cb=progress_cb,
         )
-        history.mark_uploaded([i["dest"] for i in uploaded])
         job["upload"]["state"] = "completado"
     except Exception as exc:
         job["upload"]["state"] = "error"
         job["upload"]["error"] = str(exc)
+    finally:
+        tracker.flush()
 
 
 def _run_job(job_id: str, options: dict, camera_folders: dict) -> None:

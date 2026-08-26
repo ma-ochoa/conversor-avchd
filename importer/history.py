@@ -7,6 +7,7 @@ reintentar una subida que se cortó a mitad sin repetir la importación entera).
 
 import json
 import threading
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -68,6 +69,43 @@ def mark_uploaded(dest_paths: list[str]) -> None:
             if key:
                 history["imported"][key]["uploaded_at"] = stamp
         _write(history)
+
+
+class UploadTracker:
+    """Registra en el historial lo que ya llegó al NAS, **fichero a fichero según se sube**.
+
+    Marcarlo todo al final significaba que una subida cortada a la mitad —red, cierre de
+    la app, un error cualquiera— dejaba en cero el registro y volvía a subirlo todo desde
+    el principio, aunque ya hubiera cientos de archivos en el NAS.
+    """
+
+    # Se agrupa para no reescribir el historial entero por cada foto, pero también se
+    # vuelca cada pocos segundos: un vídeo grande tarda minutos, y esperar a juntar un
+    # lote dejaría sin registrar todo ese rato.
+    LOTE = 20
+    SEGUNDOS = 20
+
+    def __init__(self, entries: list[dict]):
+        self._por_relativa = {e["dest_relative"]: e["dest"] for e in entries}
+        self._subidos: list[str] = []
+        self._ultimo = time.monotonic()
+
+    def note(self, dest_relative: str) -> None:
+        """Apunta un fichero recién subido. Vuelca al historial cuando toca."""
+        dest = self._por_relativa.get(dest_relative)
+        if not dest:
+            return
+        self._subidos.append(dest)
+        if len(self._subidos) >= self.LOTE or time.monotonic() - self._ultimo > self.SEGUNDOS:
+            self.flush()
+
+    def flush(self) -> None:
+        """Vuelca lo pendiente de apuntar. Llámalo siempre desde un `finally`: pase lo que
+        pase, lo que sí llegó al NAS tiene que quedar registrado."""
+        if self._subidos:
+            mark_uploaded(self._subidos)
+            self._subidos.clear()
+        self._ultimo = time.monotonic()
 
 
 def pending_upload() -> list[dict]:
