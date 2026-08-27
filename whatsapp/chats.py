@@ -189,6 +189,38 @@ def _nombres_wa_db(con: sqlite3.Connection) -> dict[str, str]:
         f"SELECT jid, {expr} AS nombre FROM agenda.wa_contacts WHERE {expr} IS NOT NULL")}
 
 
+def _telefonos_de_lid(con: sqlite3.Connection) -> dict[str, str]:
+    """`raw_string` de un LID -> su número de teléfono real.
+
+    **Sin esto, media conversación de grupo se queda sin autor.** Desde que WhatsApp usa
+    LID (identificadores que no revelan el teléfono), el remitente de un mensaje de grupo
+    llega como `239423019081732@lid`, que no lleva número dentro — y se enseñaba como
+    «Contacto sin identificar» aunque la persona estuviera en la agenda.
+
+    La correspondencia está en `jid_map`, que WhatsApp mantiene precisamente para eso. En
+    esta base son 38.942 mensajes de 464 remitentes, y 446 de ellos sí tienen número.
+    """
+    try:
+        filas = con.execute("""
+            SELECT lid.raw_string AS lid, pn.user AS tel
+              FROM jid_map m
+              JOIN jid lid ON lid._id = m.lid_row_id
+              JOIN jid pn  ON pn._id  = m.jid_row_id
+             WHERE pn.user IS NOT NULL AND pn.user != ''
+        """).fetchall()
+    except sqlite3.Error:
+        return {}          # bases anteriores a los LID no traen `jid_map`
+    return {f["lid"]: f["tel"] for f in filas}
+
+
+def telefono_de(raw: str | None, user: str | None, server: str | None,
+                lids: dict[str, str]) -> str | None:
+    """El teléfono de alguien, resolviendo el LID si hace falta. `None` si no se sabe."""
+    if server == "lid":
+        return lids.get(raw or "")
+    return user if (user or "").isdigit() else None
+
+
 def _nombres(con: sqlite3.Connection) -> dict[str, str]:
     """Identificador de contacto -> nombre, juntando las dos fuentes posibles.
 
@@ -213,19 +245,32 @@ def _nombres(con: sqlite3.Connection) -> dict[str, str]:
         encontrado = agenda_externa.busca(fila["user"] or "", indice)
         if encontrado:
             nombres[fila["raw_string"]] = encontrado
+
+    # Un LID hereda el nombre del teléfono al que corresponde: para la agenda es la
+    # misma persona, y quien escribe en un grupo suele hacerlo desde su LID.
+    for lid, tel in _telefonos_de_lid(con).items():
+        encontrado = agenda_externa.busca(tel, indice)
+        if encontrado:
+            nombres.setdefault(lid, encontrado)
     return nombres
 
 
 def _bonito(raw: str | None, user: str | None, server: str | None,
-            nombres: dict[str, str]) -> str:
-    """Cómo llamar a alguien: nombre de la agenda, y si no, su número."""
+            nombres: dict[str, str], lids: dict[str, str] | None = None) -> str:
+    """Cómo llamar a alguien: nombre de la agenda, y si no, su número.
+
+    `lids` es el mapa de `_telefonos_de_lid`. Sin él, un LID no tiene número que enseñar;
+    con él, la mayoría lo tienen.
+    """
     if raw and raw in nombres:
         return nombres[raw]
     if server == "g.us":
         return "Grupo"
     if server == "lid":
-        # Un `lid` no lleva teléfono dentro: no hay número que enseñar.
-        return "Contacto sin identificar"
+        telefono = (lids or {}).get(raw or "")
+        # Un `lid` no lleva el teléfono dentro; solo queda esto cuando tampoco está en
+        # `jid_map` — en esta base, 18 de 464 remitentes.
+        return f"+{telefono}" if telefono else "Contacto sin identificar"
     if server == "newsletter":
         return "Canal"
     if user and user.isdigit():
@@ -264,6 +309,7 @@ def lista_chats(busca: str = "", limit: int = 200, offset: int = 0) -> dict:
     con = _con()
     try:
         nombres = _nombres(con)
+        lids = _telefonos_de_lid(con)
         # Los recuentos van como agregados de **una sola pasada** por tabla y se cruzan
         # después. Con subconsultas correlacionadas esto tardaba minutos: eran 5.188
         # barridos de una tabla de 611.637 filas. `message_media` trae su propio
@@ -292,7 +338,8 @@ def lista_chats(busca: str = "", limit: int = 200, offset: int = 0) -> dict:
 
         chats = []
         for f in filas:
-            nombre = f["subject"] or _bonito(f["raw_string"], f["user"], f["server"], nombres)
+            nombre = f["subject"] or _bonito(f["raw_string"], f["user"], f["server"],
+                                             nombres, lids)
             if busca and busca.lower() not in nombre.lower():
                 continue
             chats.append({
@@ -324,6 +371,7 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
     con = _con()
     try:
         nombres = _nombres(con)
+        lids = _telefonos_de_lid(con)
         cabecera = con.execute("""
             SELECT c._id, c.subject, j.user, j.server, j.raw_string
               FROM chat c JOIN jid j ON j._id = c.jid_row_id WHERE c._id = ?
@@ -369,8 +417,14 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
                 "tipo_real": tipo,
                 "texto": f["text_data"],
                 "destacado": bool(f["starred"]),
-                "autor": (_bonito(f["autor_raw"], f["autor_user"], f["autor_server"], nombres)
+                "autor": (_bonito(f["autor_raw"], f["autor_user"], f["autor_server"],
+                                  nombres, lids)
                           or None) if (es_grupo and not f["from_me"]) else None,
+                # El teléfono va aparte para poder enseñarlo al pasar por encima cuando
+                # lo que se ve es el nombre. Con LID no está en la fila: hay que resolverlo.
+                "autor_numero": telefono_de(f["autor_raw"], f["autor_user"],
+                                            f["autor_server"], lids)
+                                if (es_grupo and not f["from_me"]) else None,
                 "eliminado": eliminado,
                 "citado": {"texto": (f["citado_texto"] or "")[:200],
                            "tipo": tipo_de(f["citado_tipo"])} if f["citado_tipo"] is not None else None,
@@ -390,7 +444,8 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
             "chat": {
                 "id": cabecera["_id"],
                 "nombre": cabecera["subject"] or _bonito(
-                    cabecera["raw_string"], cabecera["user"], cabecera["server"], nombres),
+                    cabecera["raw_string"], cabecera["user"], cabecera["server"],
+                    nombres, lids),
                 "es_grupo": cabecera["server"] == "g.us",
             },
             "mensajes": salida,
@@ -449,6 +504,7 @@ def contactos(busca: str = "", limit: int = 200, offset: int = 0,
     con = _con()
     try:
         nombres = _nombres(con)
+        lids = _telefonos_de_lid(con)
         union = "JOIN" if solo_con_mensajes else "LEFT JOIN"
         filas = con.execute(f"""
             WITH escritos AS (
@@ -477,12 +533,13 @@ def contactos(busca: str = "", limit: int = 200, offset: int = 0,
 
         gente = []
         for f in filas:
-            nombre = _bonito(f["raw_string"], f["user"], f["server"], nombres)
+            nombre = _bonito(f["raw_string"], f["user"], f["server"], nombres, lids)
             if busca and busca.lower() not in nombre.lower() and busca not in (f["user"] or ""):
                 continue
             gente.append({
                 "id": f["_id"], "nombre": nombre,
-                "numero": f["user"] if f["server"] == "s.whatsapp.net" else None,
+                # Un LID también tiene número: está en `jid_map`, no en la fila.
+                "numero": telefono_de(f["raw_string"], f["user"], f["server"], lids),
                 "servidor": f["server"], "mensajes": f["mensajes"] or 0,
                 # Dos cifras distintas que antes se enseñaban como una: `mensajes` es
                 # todo lo que ha escrito esa persona **en cualquier conversación**, y
@@ -511,6 +568,7 @@ def donde_escribe(jid_id: int, limit: int = 30) -> dict:
     con = _con()
     try:
         nombres = _nombres(con)
+        lids = _telefonos_de_lid(con)
         filas = con.execute("""
             SELECT c._id AS chat_id, c.subject, j.user, j.server, j.raw_string,
                    count(*) AS n,
@@ -525,7 +583,8 @@ def donde_escribe(jid_id: int, limit: int = 30) -> dict:
 
         sitios = [{
             "chat_id": f["chat_id"],
-            "nombre": f["subject"] or _bonito(f["raw_string"], f["user"], f["server"], nombres),
+            "nombre": f["subject"] or _bonito(f["raw_string"], f["user"], f["server"],
+                                              nombres, lids),
             "es_grupo": f["server"] == "g.us",
             "mensajes": f["n"],
             "primera": f["primera"],

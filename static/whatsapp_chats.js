@@ -152,7 +152,12 @@ function burbuja(m) {
   const partes = [];
 
   if (m.autor && !m.mio) {
-    partes.push(`<div class="autor">${esc(m.autor)}</div>`);
+    // Cuando lo que se enseña es el nombre de la agenda, el número queda a un palmo del
+    // ratón: en un grupo grande hace falta a menudo y abrir la ficha del contacto para
+    // verlo es un viaje de ida y vuelta.
+    const numero = m.autor_numero ? `+${m.autor_numero}` : "";
+    const titulo = numero && numero !== m.autor ? ` title="${esc(numero)}"` : "";
+    partes.push(`<div class="autor"${titulo}>${esc(m.autor)}</div>`);
   }
   if (m.citado) {
     const info = tipoDe(m.citado.tipo);

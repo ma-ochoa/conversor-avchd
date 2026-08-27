@@ -188,6 +188,9 @@ progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
 .burbuja.mia  { align-self: flex-end;   background: var(--wa-mia); }
 .burbuja.suya { align-self: flex-start; background: var(--wa-suya); }
 .burbuja .autor { font-size: 0.76rem; font-weight: 600; color: var(--wa-autor); margin-bottom: 0.15rem; }
+/* El autor lleva el teléfono en `title` cuando se enseña el nombre: se avisa con el
+   cursor, que si no nadie descubre que está ahí. */
+.burbuja .autor[title] { cursor: help; }
 .burbuja .citado {
   border-left: 3px solid var(--wa-autor);
   padding: 0.2rem 0.5rem; margin-bottom: 0.3rem;
