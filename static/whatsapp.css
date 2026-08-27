@@ -276,3 +276,8 @@ video.redonda { border-radius: 50%; aspect-ratio: 1; object-fit: cover; max-widt
 
 /* El pie de la rejilla ocupa toda la fila, no una celda. */
 .pie-rejilla { grid-column: 1 / -1; text-align: center; padding: 0.8rem 0; margin: 0; }
+
+/* Desglose de «dónde ha escrito» que se abre bajo un contacto en la tabla. */
+.desglose > td { background: var(--wa-panel); }
+.desglose-lista { list-style: none; margin: 0.3rem 0 0; padding: 0; font-size: 0.85rem; }
+.desglose-lista li { padding: 0.15rem 0; }

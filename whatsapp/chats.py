@@ -456,12 +456,23 @@ def contactos(busca: str = "", limit: int = 200, offset: int = 0,
                  WHERE sender_jid_row_id > 0 GROUP BY sender_jid_row_id
             ), suyos AS (
                 SELECT jid_row_id AS jid, min(_id) AS chat_id FROM chat GROUP BY jid_row_id
+            ), en_su_chat AS (
+                -- Los avisos del sistema (tipo 7: «cifrado de extremo a extremo», cambios
+                -- de número) se cuentan aparte: son más de la mitad de las conversaciones
+                -- individuales, y contarlos como mensajes hacía que un chat sin una sola
+                -- palabra dijera que tenía contenido.
+                SELECT chat_row_id AS chat_id, count(*) AS n_todo,
+                       sum(CASE WHEN message_type != 7 THEN 1 ELSE 0 END) AS n
+                  FROM message GROUP BY chat_row_id
             )
             SELECT j._id, j.user, j.server, j.raw_string,
-                   escritos.n AS mensajes, suyos.chat_id AS chat_id
+                   escritos.n AS mensajes, suyos.chat_id AS chat_id,
+                   en_su_chat.n AS mensajes_chat,
+                   en_su_chat.n_todo AS mensajes_chat_todo
               FROM jid j
               {union} escritos ON escritos.jid = j._id
               LEFT JOIN suyos  ON suyos.jid = j._id
+              LEFT JOIN en_su_chat ON en_su_chat.chat_id = suyos.chat_id
         """).fetchall()
 
         gente = []
@@ -473,11 +484,56 @@ def contactos(busca: str = "", limit: int = 200, offset: int = 0,
                 "id": f["_id"], "nombre": nombre,
                 "numero": f["user"] if f["server"] == "s.whatsapp.net" else None,
                 "servidor": f["server"], "mensajes": f["mensajes"] or 0,
+                # Dos cifras distintas que antes se enseñaban como una: `mensajes` es
+                # todo lo que ha escrito esa persona **en cualquier conversación**, y
+                # `mensajes_chat` lo que hay en la vuestra a solas. Alguien de un grupo
+                # muy activo puede tener miles de los primeros y cero de los segundos.
+                "mensajes_chat": f["mensajes_chat"] or 0,
+                # Un chat que solo tiene avisos se ve vacío al abrirlo: hay que poder
+                # distinguirlo de uno en el que de verdad no hay nada.
+                "avisos_chat": (f["mensajes_chat_todo"] or 0) - (f["mensajes_chat"] or 0),
                 "en_agenda": bool(f["raw_string"] in nombres),
                 "chat_id": f["chat_id"],
             })
         gente.sort(key=lambda p: (-p["mensajes"], p["nombre"].lower()))
         return {"total": len(gente), "contactos": gente[offset:offset + limit]}
+    finally:
+        con.close()
+
+
+def donde_escribe(jid_id: int, limit: int = 30) -> dict:
+    """En qué conversaciones ha escrito esa persona, y cuánto en cada una.
+
+    Es lo que explica un contacto con miles de mensajes cuya conversación a solas está
+    vacía: todo lo suyo está en grupos. Sin poder verlo, la cifra de la lista parece un
+    fallo de la aplicación — que es exactamente como se leía antes.
+    """
+    con = _con()
+    try:
+        nombres = _nombres(con)
+        filas = con.execute("""
+            SELECT c._id AS chat_id, c.subject, j.user, j.server, j.raw_string,
+                   count(*) AS n,
+                   min(m.timestamp) AS primera, max(m.timestamp) AS ultima
+              FROM message m
+              JOIN chat c ON c._id = m.chat_row_id
+              JOIN jid  j ON j._id = c.jid_row_id
+             WHERE m.sender_jid_row_id = ?
+             GROUP BY m.chat_row_id
+             ORDER BY n DESC
+        """, (jid_id,)).fetchall()
+
+        sitios = [{
+            "chat_id": f["chat_id"],
+            "nombre": f["subject"] or _bonito(f["raw_string"], f["user"], f["server"], nombres),
+            "es_grupo": f["server"] == "g.us",
+            "mensajes": f["n"],
+            "primera": f["primera"],
+            "ultima": f["ultima"],
+        } for f in filas]
+
+        return {"total": len(sitios), "escritos": sum(s["mensajes"] for s in sitios),
+                "chats": sitios[:limit]}
     finally:
         con.close()
 

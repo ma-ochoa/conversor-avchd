@@ -1035,6 +1035,16 @@ def whatsapp_contactos():
         return _wa_error(exc, 404)
 
 
+@app.route("/api/whatsapp/contacto/<int:jid_id>/chats")
+def whatsapp_contacto_chats(jid_id):
+    """Dónde ha escrito ese contacto. Explica los que tienen miles de mensajes y la
+    conversación a solas vacía: lo suyo está en grupos."""
+    try:
+        return jsonify(wa_chats.donde_escribe(jid_id))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
 # ---------------------------------------------------------------- agenda externa
 
 @app.route("/api/whatsapp/agenda")

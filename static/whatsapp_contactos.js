@@ -54,6 +54,9 @@ async function carga() {
   pinta(todos);
 }
 
+// «Ha escrito» y «Chat a solas» son cifras distintas, y confundirlas es lo que hacía
+// parecer rota la aplicación: alguien de un grupo muy activo sale con miles de mensajes
+// escritos y la conversación a solas vacía, así que al abrirla no había nada que ver.
 function pinta(lista) {
   document.querySelector("#tabla-contactos tbody").innerHTML = lista.map((c) => `
     <tr>
@@ -63,11 +66,54 @@ function pinta(lista) {
               ? "<span class='muted'>sin nombre</span>"
               : esc(c.nombre)}${c.en_agenda ? " <span class='muted'>· en agenda</span>" : ""}</td>
       <td>${c.numero ? "+" + esc(c.numero) : "<span class='muted'>—</span>"}</td>
-      <td>${formatNumero(c.mensajes)}</td>
+      <td>${c.mensajes
+              ? `<button class="link-btn" data-donde="${c.id}">${formatNumero(c.mensajes)}</button>`
+              : "<span class='muted'>—</span>"}</td>
+      <td>${c.mensajes_chat
+              ? formatNumero(c.mensajes_chat)
+              : c.avisos_chat
+                  ? "<span class='muted'>solo avisos</span>"
+                  : "<span class='muted'>vacío</span>"}</td>
       <td class="muted">${esc(explica(c.servidor) || c.servidor)}</td>
-      <td>${c.chat_id ? `<a href="/whatsapp/chats#chat=${c.chat_id}">ver chat →</a>` : ""}</td>
+      <td>${c.chat_id && c.mensajes_chat
+              ? `<a href="/whatsapp/chats#chat=${c.chat_id}">ver chat →</a>` : ""}</td>
     </tr>`).join("");
 }
+
+// Al pulsar la cifra de mensajes escritos se despliega dónde están, que es la respuesta
+// a «dice que tiene miles y no veo ninguno».
+document.querySelector("#tabla-contactos").addEventListener("click", async (ev) => {
+  const boton = ev.target.closest("[data-donde]");
+  if (!boton) return;
+  const fila = boton.closest("tr");
+  if (fila.nextElementSibling?.classList.contains("desglose")) {
+    fila.nextElementSibling.remove();
+    return;
+  }
+  document.querySelectorAll("#tabla-contactos .desglose").forEach((f) => f.remove());
+
+  const detalle = fila.parentNode.insertBefore(document.createElement("tr"),
+                                               fila.nextElementSibling);
+  detalle.className = "desglose";
+  detalle.innerHTML = `<td colspan="6" class="muted">Buscando…</td>`;
+
+  try {
+    const d = await api(`/api/whatsapp/contacto/${boton.dataset.donde}/chats`);
+    const sitios = d.chats.map((s) => `
+      <li>${formatNumero(s.mensajes)} en
+          <a href="/whatsapp/chats#chat=${s.chat_id}">${esc(s.nombre)}</a>
+          ${s.es_grupo ? "<span class='muted'>· grupo</span>" : ""}</li>`).join("");
+    detalle.innerHTML = `<td colspan="6">
+      <p class="muted">Ha escrito ${formatNumero(d.escritos)} mensajes repartidos en
+      ${formatNumero(d.total)} ${d.total === 1 ? "conversación" : "conversaciones"}:</p>
+      <ul class="desglose-lista">${sitios}</ul>
+      ${d.total > d.chats.length
+          ? `<p class="hint">Se muestran las ${d.chats.length} con más mensajes.</p>` : ""}
+    </td>`;
+  } catch (err) {
+    detalle.innerHTML = `<td colspan="6" class="muted">${esc(err.message)}</td>`;
+  }
+});
 
 el("busca").addEventListener("input", (e) => {
   const q = e.target.value.trim().toLowerCase();
