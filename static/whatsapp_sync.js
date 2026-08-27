@@ -182,7 +182,7 @@ async function cargaEstado() {
       ? `${formatBytes(s.decrypted.size)} — del ${s.decrypted.modified.replace("T", " ")}` : "no"],
     ["Agenda de contactos", s.agenda_cifrada ? "descargada" : "no"],
     ["Índices de consulta", s.indices_listos ? "listos" : "sin preparar"],
-    ["Herramienta de descifrado", s.tool_installed ? "instalada" : "FALTA (pip install wa-crypt-tools)"],
+    ["Herramienta de descifrado", s.tool_installed ? "instalada" : `FALTA — ${s.tool_command || ""}`],
   ];
   document.querySelector("#wa-estado tbody").innerHTML = filas
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
@@ -196,7 +196,7 @@ async function cargaEstado() {
   if (!s.tool_installed) {
     el("wa-descifrar").disabled = true;
     el("wa-descifrar-estado").textContent =
-      "Falta la herramienta de descifrado: pip install wa-crypt-tools";
+      `Falta la herramienta de descifrado. Instálala con: ${s.tool_command || ""}`;
   }
 }
 

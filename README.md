@@ -77,8 +77,15 @@ Photos, Plex, Emby, etc.) y se vea bien tanto en el móvil como en la TV.
 ```bash
 git clone https://github.com/ma-ochoa/conversor-avchd.git
 cd conversor-avchd
-pip3 install -r requirements.txt
+python3 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 ```
+
+**Las dependencias van en un entorno propio (`.venv`), no en el Python del sistema.** En
+macOS, un `pip install` a secas suele ser el de Homebrew, que rechaza instalar nada en su
+Python (PEP 668, «externally-managed-environment»). El lanzador crea el entorno y instala
+lo que falte por su cuenta, así que estos dos comandos solo hacen falta si vas a arrancar
+a mano.
 
 `requests` y `paramiko` solo hacen falta para enviar al NAS (File Station y SFTP
 respectivamente). Todo lo demás funciona sin ellos.
@@ -93,7 +100,7 @@ función se pierde y sigue adelante. Para pararlo, cierra la ventana o pulsa Ctr
 **Desde terminal**:
 
 ```bash
-python3 app.py
+.venv/bin/python app.py
 ```
 
 Y abre http://127.0.0.1:5050 (el servidor solo escucha en local, no es accesible desde
@@ -220,7 +227,7 @@ filtro para marcar y desmarcar días por rango de fechas.
 Necesita gphoto2, que se instala aparte:
 
 ```bash
-brew install libgphoto2 && pip install gphoto2
+brew install libgphoto2 && .venv/bin/pip install gphoto2
 ```
 
 Sin él, el móvil se sigue detectando y se ofrece abrir **Captura de Imagen** para volcar a

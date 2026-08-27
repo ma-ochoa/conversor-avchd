@@ -238,8 +238,9 @@ async function renderPhones() {
     ? "Ahora mismo no se puede leer. Casi siempre es porque el móvil está en modo " +
       "«Transferencia de imágenes (PTP)»: cámbialo a «Transferencia de archivos (MTP)» " +
       "en la notificación USB del móvil, que además es el único modo que muestra carpetas."
-    : "Para leer las carpetas del móvil hace falta gphoto2:  brew install libgphoto2  y  " +
-      "pip install gphoto2. Mientras tanto, puedes volcar con Captura de Imagen.";
+    : "Para leer las carpetas del móvil hace falta gphoto2:  " +
+      (data.mtp_install_command || "brew install libgphoto2") +
+      ". Mientras tanto, puedes volcar con Captura de Imagen.";
   box.appendChild(detail);
 
   const button = document.createElement("button");

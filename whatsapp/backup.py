@@ -171,13 +171,9 @@ def descifra(clave: str, cifrada: Path | None = None,
             capture_output=True, text=True, timeout=600,
         )
     except FileNotFoundError as exc:
-        # Se da la ruta del intérprete en vez de un `pip` a secas: en macOS ese `pip`
-        # suele ser el de Homebrew, que rechaza instalar nada (PEP 668), y aunque
-        # funcionara instalaría en otro entorno distinto del que ejecuta la app.
         raise BackupError(
             "Falta la herramienta de descifrado. Instálala en el mismo entorno que "
-            "ejecuta la app:\n"
-            f"    {sys.executable} -m pip install wa-crypt-tools"
+            f"ejecuta la app:\n    {_como_instalar()}"
         ) from exc
     except subprocess.TimeoutExpired as exc:
         raise BackupError("El descifrado ha tardado demasiado y se ha cancelado.") from exc
@@ -282,7 +278,19 @@ def estado() -> dict:
                          .isoformat(timespec="seconds") if descifrada else None),
         },
         "tool_installed": _herramienta_instalada(),
+        # La interfaz enseña este mismo comando, para no inventarse uno que no funcione.
+        "tool_command": _como_instalar(),
     }
+
+
+def _como_instalar() -> str:
+    """El comando que instala wa-crypt-tools **en el entorno que ejecuta la app**.
+
+    Se da la ruta del intérprete en vez de un `pip` a secas porque en macOS ese `pip`
+    suele ser el de Homebrew, que rechaza instalar nada (PEP 668) y, aunque funcionara,
+    lo instalaría en un entorno distinto del que después va a buscar el módulo.
+    """
+    return f"{sys.executable} -m pip install wa-crypt-tools"
 
 
 def _herramienta_instalada() -> bool:

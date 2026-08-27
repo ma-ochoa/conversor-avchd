@@ -28,6 +28,11 @@ def disponible() -> bool:
     return mtp.available()
 
 
+def como_instalar() -> str:
+    """El comando que instala lo que falta, para el entorno que ejecuta la app."""
+    return mtp.como_instalar()
+
+
 def conectados() -> list[dict]:
     """Móviles que se pueden abrir ahora mismo. Lista vacía si no hay ninguno."""
     return mtp.detect()

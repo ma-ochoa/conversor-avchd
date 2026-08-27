@@ -788,6 +788,8 @@ def importacion_phones():
         "phones": usb,
         "readable": readable,
         "mtp_available": mtp.available(),
+        # La interfaz enseña este mismo comando, para no inventarse uno que no funcione.
+        "mtp_install_command": mtp.como_instalar(),
     })
 
 

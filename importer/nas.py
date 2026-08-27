@@ -19,8 +19,19 @@ import ftplib
 import platform
 import posixpath
 import ssl
+import sys
 import uuid
 from pathlib import Path
+
+
+def _como_instalar(paquete: str) -> str:
+    """El comando que instala `paquete` **en el entorno que está ejecutando la app**.
+
+    Se da la ruta del intérprete en vez de un `pip` a secas porque en macOS ese `pip`
+    suele ser el de Homebrew, que rechaza instalar nada (PEP 668) y, aunque funcionara,
+    lo instalaría en un entorno distinto del que después va a buscar el módulo.
+    """
+    return f"{sys.executable} -m pip install {paquete}"
 
 
 def _device_name() -> str:
@@ -234,7 +245,7 @@ class _SynologySession:
         except ImportError as exc:
             raise NasError(
                 "Falta la librería 'requests' para hablar con el NAS por File Station. "
-                "Instálala con: pip install requests"
+                f"Instálala con: {_como_instalar('requests')}"
             ) from exc
 
         self.requests = requests
@@ -460,7 +471,8 @@ def _upload_sftp(files: list[tuple[Path, str]], settings: dict, progress_cb) -> 
         import paramiko
     except ImportError as exc:
         raise NasError(
-            "Falta la librería 'paramiko' para subir por SFTP. Instálala con: pip install paramiko"
+            "Falta la librería 'paramiko' para subir por SFTP. Instálala con: "
+            f"{_como_instalar('paramiko')}"
         ) from exc
 
     port = settings.get("port") or DEFAULT_PORTS["sftp"]
@@ -692,7 +704,8 @@ def test_connection(settings: dict) -> dict:
             import paramiko
         except ImportError as exc:
             raise NasError(
-                "Falta la librería 'paramiko' para SFTP. Instálala con: pip install paramiko"
+                f"Falta la librería 'paramiko' para SFTP. Instálala con: "
+                f"{_como_instalar('paramiko')}"
             ) from exc
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())

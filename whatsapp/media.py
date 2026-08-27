@@ -175,7 +175,7 @@ def find_root() -> str:
     if not dispositivo.disponible():
         raise WhatsAppNotFound(
             "Para leer WhatsApp del móvil hace falta gphoto2. Instálalo con:\n"
-            "    brew install libgphoto2\n    pip install gphoto2"
+            f"    {dispositivo.como_instalar()}"
         )
     if not dispositivo.conectados():
         raise WhatsAppNotFound(

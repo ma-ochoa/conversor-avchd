@@ -23,6 +23,7 @@ relanza solo cuando el sistema vuelva a necesitarlo.
 """
 
 import subprocess
+import sys
 import threading
 import time
 from datetime import datetime
@@ -60,14 +61,24 @@ class MtpUnavailable(MtpError):
     """Falta la librería: es un problema de instalación, no de uso."""
 
 
+def como_instalar() -> str:
+    """El comando que instala gphoto2 **en el entorno que está ejecutando la app**.
+
+    Se da la ruta del intérprete en vez de un `pip` a secas porque en macOS ese `pip`
+    suele ser el de Homebrew, que rechaza instalar nada (PEP 668) y, aunque funcionara,
+    lo instalaría en un entorno distinto del que después va a buscar el módulo. Es
+    público para que la interfaz enseñe el mismo comando que este módulo.
+    """
+    return f"brew install libgphoto2 && {sys.executable} -m pip install gphoto2"
+
+
 def _gphoto():
     try:
         import gphoto2
     except ImportError as exc:
         raise MtpUnavailable(
             "Para leer las carpetas del móvil hace falta gphoto2. Instálalo con:\n"
-            "    brew install libgphoto2\n"
-            "    pip install gphoto2"
+            f"    {como_instalar()}"
         ) from exc
     return gphoto2
 
