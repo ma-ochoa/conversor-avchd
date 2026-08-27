@@ -74,6 +74,11 @@ def start(kinds: list[str] | None = None, destino: str | None = None,
         "avisos": [],
         "medios": {"total": 0, "copiados": 0, "omitidos": 0, "bytes": 0,
                    "bytes_total": 0, "actual": None, "errores": []},
+        # El inventario recorre las 9 carpetas de WhatsApp por USB y en un móvil con
+        # años de uso son decenas de miles de ficheros: varios minutos en los que hay
+        # que enseñar algo, o parece que se ha colgado.
+        "inventario": {"tipo": None, "vistos": 0, "de": len(media.KINDS),
+                       "hechos": 0},
         "base": {"nombre": None, "bytes": 0, "bytes_total": 0, "descargada": False},
         "agenda": {"descargada": False},
         "empezado": history.marca_tiempo(),
@@ -116,7 +121,14 @@ def _run(job: dict, kinds, destino, con_medios: bool, con_base: bool) -> None:
 
 def _sincroniza_medios(job: dict, raiz: str, kinds, destino: str) -> None:
     job["fase"] = "inventario"
-    escaneo = media.scan_phone(root=raiz, kinds=None)      # inventario siempre completo
+
+    def avance(etiqueta, vistos):
+        job["inventario"].update(tipo=etiqueta, vistos=vistos,
+                                 hechos=job["inventario"]["hechos"] + 1)
+
+    # Inventario siempre completo, aunque solo se copie un tipo: el plan necesita saber
+    # qué hay para poder decir qué falta.
+    escaneo = media.scan_phone(root=raiz, kinds=None, progress_cb=avance)
 
     plan = media.build_plan(
         escaneo, destino, kinds=kinds,
@@ -125,6 +137,8 @@ def _sincroniza_medios(job: dict, raiz: str, kinds, destino: str) -> None:
     job["medios"]["total"] = plan["totals"]["files"]
     job["medios"]["omitidos"] = plan["totals"]["skipped_duplicates"]
     job["medios"]["bytes_total"] = plan["totals"]["bytes"]
+    # Se publica para que la interfaz no presente como total una cifra que sabe corta.
+    job["medios"]["sin_tamano"] = plan["totals"].get("sin_tamano", 0)
 
     if not plan["items"]:
         job["avisos"].append("No había ningún medio nuevo que copiar.")

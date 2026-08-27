@@ -241,7 +241,7 @@ def list_folder(path: str = "/", count_files: bool = False) -> dict:
 
 def list_files(path: str, recursive: bool = True, limit: int = 0,
                progress_cb=None, extensions: set[str] | None = None,
-               skip_noise: bool = True) -> list[dict]:
+               skip_noise: bool = True, necesita_info=None) -> list[dict]:
     """Ficheros de medios de `path`, con tamaño y fecha de captura.
 
     **Recursivo por defecto.** Pedir "los archivos de DCIM" tiene que traer los de
@@ -256,6 +256,13 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
     vídeos. WhatsApp lo usa para llevarse también notas de voz (.opus) y documentos, que
     no son medios de cámara pero sí parte de la copia de seguridad. `skip_noise` se apaga
     para bajar por rutas que el explorador esconde a propósito, como `Android/`.
+
+    **`necesita_info` es lo que hace viable inventariar un WhatsApp entero.** Listar los
+    nombres de una carpeta es una sola llamada; pedir tamaño y fecha es **una llamada por
+    fichero**, y con 53.000 ficheros eso son 53.000 viajes por USB — decenas de minutos.
+    Quien llama puede decidir, por el nombre, si de verdad le hacen falta: WhatsApp lleva
+    la fecha dentro del nombre (`IMG-20260819-WA0012.jpg`) y no necesita preguntar. Por
+    defecto se piden siempre, que es lo que espera el importador de fotos de cámara.
     """
     entries: list[dict] = []
     allowed = extensions if extensions is not None else (_PHOTO_EXTS | _VIDEO_EXTS)
@@ -270,14 +277,15 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
             if allowed and suffix not in allowed:
                 continue
             size = captured = None
-            try:
-                info = camera.file_get_info(folder, name)
-                size = getattr(info.file, "size", None)
-                mtime = getattr(info.file, "mtime", 0)
-                if mtime:
-                    captured = datetime.fromtimestamp(mtime).isoformat()
-            except Exception:
-                pass
+            if necesita_info is None or necesita_info(name):
+                try:
+                    info = camera.file_get_info(folder, name)
+                    size = getattr(info.file, "size", None)
+                    mtime = getattr(info.file, "mtime", 0)
+                    if mtime:
+                        captured = datetime.fromtimestamp(mtime).isoformat()
+                except Exception:
+                    pass
             entries.append({
                 "name": name,
                 "folder": folder,

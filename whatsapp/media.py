@@ -185,9 +185,23 @@ def find_root() -> str:
         )
 
     try:
-        stores = [s["path"] for s in dispositivo.lista_carpetas("/")] or ["/"]
+        stores = [s["path"] for s in dispositivo.lista_carpetas("/")]
     except Exception as exc:
         raise WhatsAppNotFound(f"No se pudo leer el almacenamiento del móvil: {exc}") from exc
+
+    # **Cero almacenamientos con el móvil detectado** es un caso propio, y el más
+    # frecuente: el teléfono está enchufado y gphoto2 lo enumera, pero mientras esté
+    # bloqueado o en «solo carga» no expone ni la memoria interna. Decir «no se encuentra
+    # WhatsApp» aquí manda a buscar en el sitio equivocado.
+    if not stores:
+        raise WhatsAppNotFound(
+            "El móvil está conectado pero no deja ver su almacenamiento. Suele ser una "
+            "de estas dos cosas:\n"
+            "  · está bloqueado — desbloquéalo con el cable puesto;\n"
+            "  · el USB está en «solo carga» — despliega la notificación del móvil y "
+            "elige «Transferencia de archivos» (MTP).\n"
+            "Después vuelve a intentarlo."
+        )
 
     for store in stores:
         for root in MEDIA_ROOTS:
@@ -324,13 +338,20 @@ def _summarize(entries: list[dict], source: str, origin: str) -> dict:
 
 
 def import_key(entry: dict) -> str:
-    """Identidad de un archivo de WhatsApp, para no traerlo dos veces.
+    """Identidad de un archivo de WhatsApp: **solo el nombre**.
 
-    Basta el nombre y el tamaño: WhatsApp ya garantiza que el nombre es único dentro del
-    día, y el contador nunca se reutiliza. No se mete la fecha en la llave a propósito —
-    la del fichero puede cambiar al copiarlo, y entonces el mismo archivo parecería nuevo.
+    WhatsApp lo garantiza único — lleva el día y un contador que no reutiliza — y ese
+    nombre es además la llave con la que se cruzan la base de datos y el disco.
+
+    No se mete el tamaño, y esa es una decisión con consecuencias: el inventario ya no
+    pregunta el tamaño de cada fichero al móvil (una llamada por fichero, decenas de
+    miles de viajes por USB), así que en el momento de decidir si algo está copiado
+    **no se conoce**. Meterlo en la llave obligaría a preguntarlo siempre.
+
+    Tampoco se mete la fecha: la del fichero puede cambiar al copiarlo, y entonces el
+    mismo archivo parecería nuevo.
     """
-    return f"wa|{entry['name']}|{entry['size']}"
+    return f"wa|{entry['name']}"
 
 
 def dest_relative(entry: dict) -> str:
@@ -380,7 +401,12 @@ def build_plan(scan: dict, destination: str, kinds: list[str] | None = None,
         "tree": [{"folder": k, **v} for k, v in sorted(tree.items())],
         "totals": {
             "files": len(items),
-            "bytes": sum(i["size"] for i in items),
+            "bytes": sum(i["size"] or 0 for i in items),
             "skipped_duplicates": skipped,
+            # Cuántos vienen sin tamaño. No es un fallo: el inventario no se lo pregunta
+            # al móvil a propósito (ver `import_key`), así que el total solo es fiable
+            # cuando este número es cero. Quien decida sobre el espacio libre tiene que
+            # mirarlo, en vez de fiarse de un total que se queda corto.
+            "sin_tamano": sum(1 for i in items if not i["size"]),
         },
     }

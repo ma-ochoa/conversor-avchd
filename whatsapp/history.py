@@ -39,7 +39,14 @@ def _write(datos: dict) -> None:
 
 
 def claves_copiadas() -> set[str]:
-    return set(load()["copiado"].keys())
+    """Llaves de lo ya copiado.
+
+    Se derivan del **nombre guardado en cada entrada**, no de las claves del diccionario,
+    para que sigan valiendo los registros escritos cuando la llave incluía el tamaño
+    (`wa|nombre|12345`). Sin esto, cambiar el formato de la llave habría hecho que todo
+    lo copiado hasta ahora se volviera a traer.
+    """
+    return {f"wa|{v['name']}" for v in load()["copiado"].values() if v.get("name")}
 
 
 def registra(entradas: dict[str, dict]) -> None:

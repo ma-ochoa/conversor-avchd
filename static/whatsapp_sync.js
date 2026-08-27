@@ -82,15 +82,25 @@ async function sondeaSync(jobId) {
   let detalle = "";
   if (job.fase === "medios") {
     el("wa-barra").value = m.total ? m.copiados / m.total : 0;
-    detalle = `${formatNumero(m.copiados)}/${formatNumero(m.total)} archivos · ` +
-              `${formatBytes(m.bytes)} de ${formatBytes(m.bytes_total)}` +
+    // El total en bytes solo se enseña si es fiable: el inventario no pregunta el
+    // tamaño de cada fichero, así que casi siempre se sabe cuánto se lleva copiado
+    // pero no cuánto queda.
+    const tamaño = m.sin_tamano
+      ? `${formatBytes(m.bytes)} copiados`
+      : `${formatBytes(m.bytes)} de ${formatBytes(m.bytes_total)}`;
+    detalle = `${formatNumero(m.copiados)}/${formatNumero(m.total)} archivos · ${tamaño}` +
               (m.actual ? ` · ${m.actual}` : "");
   } else if (job.fase === "base") {
     el("wa-barra").value = b.bytes_total ? b.bytes / b.bytes_total : 0;
     detalle = `${b.nombre || ""} — ${formatBytes(b.bytes)} de ${formatBytes(b.bytes_total)}`;
   } else if (job.fase === "inventario") {
-    el("wa-barra").removeAttribute("value");        // indeterminada
-    detalle = "Leyendo las carpetas del móvil…";
+    // Recorrer todo el WhatsApp por USB son varios minutos: se enseña por dónde va y
+    // cuántos lleva, en vez de una barra indeterminada que no dice nada.
+    const inv = job.inventario || {};
+    el("wa-barra").value = inv.de ? inv.hechos / inv.de : 0;
+    detalle = `Inventariando ${inv.tipo || "el móvil"}… ` +
+              `${formatNumero(inv.vistos)} archivos vistos ` +
+              `(${inv.hechos || 0} de ${inv.de || 0} carpetas)`;
   }
   el("wa-detalle").textContent = detalle;
 

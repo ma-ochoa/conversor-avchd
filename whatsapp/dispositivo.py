@@ -39,16 +39,21 @@ def lista_carpetas(ruta: str) -> list[dict]:
 
 
 def lista_ficheros(ruta: str, recursivo: bool = True,
-                   extensiones: set[str] | None = None) -> list[dict]:
+                   extensiones: set[str] | None = None,
+                   necesita_info=None) -> list[dict]:
     """Ficheros de `ruta`: [{'name', 'folder', 'path', 'size', 'captured'}].
 
     `extensiones` vacío o None = sin filtrar. Se pide `skip_noise=False` siempre porque
     todo lo de WhatsApp vive bajo `Android/`, que el explorador de carpetas esconde a
     propósito por tener cientos de carpetas de aplicaciones.
+
+    `necesita_info(nombre) -> bool` decide de qué ficheros hace falta preguntar tamaño y
+    fecha. Cada consulta de esas es un viaje por USB: con decenas de miles de ficheros,
+    pedirlas todas convierte un inventario de segundos en uno de media hora.
     """
     return mtp.list_files(ruta, recursive=recursivo,
                           extensions=extensiones if extensiones is not None else set(),
-                          skip_noise=False)
+                          skip_noise=False, necesita_info=necesita_info)
 
 
 def descarga(carpeta: str, nombre: str, destino: Path,

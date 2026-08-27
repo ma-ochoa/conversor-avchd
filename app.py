@@ -1185,10 +1185,16 @@ def whatsapp_copy():
         return error
     if not plan["items"]:
         return jsonify({"error": "No hay nada que copiar con los tipos elegidos."}), 400
+    # El aviso de espacio solo se da cuando el total es fiable. El inventario de WhatsApp
+    # no pregunta el tamaño de cada fichero (serían decenas de miles de viajes por USB),
+    # así que un total incompleto **no debe bloquear**: negarse a copiar por una cifra
+    # que se sabe corta sería peor que dejar que empiece y falle por disco lleno.
     libre = free_space(plan["destination"])
-    if libre is not None and libre < plan["totals"]["bytes"]:
+    totales = plan["totals"]
+    if (libre is not None and not totales.get("sin_tamano")
+            and libre < totales["bytes"]):
         return jsonify({"error":
-            f"No hay espacio suficiente: hacen falta {plan['totals']['bytes'] / 1e9:.1f} GB "
+            f"No hay espacio suficiente: hacen falta {totales['bytes'] / 1e9:.1f} GB "
             f"y quedan {libre / 1e9:.1f} GB."}), 400
     wa.config.save_config({"destination": plan["destination"],
                            "kinds": _wa_kinds(data) or []})
