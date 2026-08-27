@@ -36,20 +36,41 @@ Instálalas con:
   brew install ffmpeg exiftool"
 fi
 
+# La app corre siempre dentro de .venv, nunca con el Python del sistema. El de Homebrew
+# rechaza que se le instalen paquetes (PEP 668, "externally-managed-environment"), así que
+# un `pip install` suelto falla y las dependencias no llegan a estar nunca. Con el entorno
+# propio, además, da igual qué python3 tenga delante el usuario en su PATH.
+PY=".venv/bin/python"
+
+# Un venv se queda inservible si se actualiza por debajo el Python con el que se creó:
+# el enlace al intérprete apunta a una versión que ya no existe. Se detecta y se rehace.
+if [ -x "$PY" ] && ! "$PY" -c "pass" 2>/dev/null; then
+  echo "${AMARILLO}El entorno .venv ya no funciona (seguramente se actualizó Python). Se rehace.${FIN}"
+  rm -rf .venv
+fi
+
+if [ ! -x "$PY" ]; then
+  echo "${GRIS}Creando el entorno .venv…${FIN}"
+  python3 -m venv .venv || fallo "No se pudo crear el entorno .venv."
+fi
+
 # Flask es la única dependencia de Python imprescindible para arrancar.
-if ! python3 -c "import flask" 2>/dev/null; then
-  fallo "Falta Flask. Instala las dependencias con:
-  pip3 install -r requirements.txt"
+if ! "$PY" -c "import flask" 2>/dev/null; then
+  echo "${GRIS}Instalando dependencias (esto solo pasa la primera vez)…${FIN}"
+  "$PY" -m pip install --quiet -r requirements.txt || fallo "No se pudieron instalar las dependencias.
+Lánzalo a mano para ver el error completo:
+  .venv/bin/pip install -r requirements.txt"
 fi
 
 # Lo siguiente es opcional: la app arranca igual, solo pierde funciones concretas.
 AVISOS=""
 [ -x "/opt/homebrew/opt/ffmpeg-full/bin/ffmpeg" ] || \
   AVISOS="$AVISOS\n  ${AMARILLO}·${FIN} Sin ffmpeg-full: no habrá estabilización ni títulos en el montaje.\n    ${GRIS}brew install ffmpeg-full${FIN}"
-python3 -c "import gphoto2" 2>/dev/null || \
-  AVISOS="$AVISOS\n  ${AMARILLO}·${FIN} Sin gphoto2: los móviles se detectan pero no se pueden leer sus carpetas.\n    ${GRIS}brew install libgphoto2 && pip3 install gphoto2${FIN}"
-python3 -c "import requests" 2>/dev/null || \
-  AVISOS="$AVISOS\n  ${AMARILLO}·${FIN} Sin requests: no se podrá enviar al NAS por Synology File Station.\n    ${GRIS}pip3 install -r requirements.txt${FIN}"
+# gphoto2 no basta con instalarlo desde pip: necesita antes la librería del sistema.
+"$PY" -c "import gphoto2" 2>/dev/null || \
+  AVISOS="$AVISOS\n  ${AMARILLO}·${FIN} Sin gphoto2: los móviles se detectan pero no se pueden leer sus carpetas.\n    ${GRIS}brew install libgphoto2 && .venv/bin/pip install gphoto2${FIN}"
+"$PY" -c "import requests" 2>/dev/null || \
+  AVISOS="$AVISOS\n  ${AMARILLO}·${FIN} Sin requests: no se podrá enviar al NAS por Synology File Station.\n    ${GRIS}.venv/bin/pip install -r requirements.txt${FIN}"
 
 echo "${VERDE}Todo listo.${FIN}"
 [ -n "$AVISOS" ] && { echo; echo "Funciones no disponibles:"; printf "$AVISOS\n"; }
@@ -79,7 +100,7 @@ fi
 
 echo
 echo "Arrancando…"
-python3 app.py &
+"$PY" app.py &
 SERVER_PID=$!
 
 # Cerrar la ventana de Terminal no debe dejar el servidor colgado en segundo plano.

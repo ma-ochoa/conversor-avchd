@@ -171,9 +171,13 @@ def descifra(clave: str, cifrada: Path | None = None,
             capture_output=True, text=True, timeout=600,
         )
     except FileNotFoundError as exc:
+        # Se da la ruta del intérprete en vez de un `pip` a secas: en macOS ese `pip`
+        # suele ser el de Homebrew, que rechaza instalar nada (PEP 668), y aunque
+        # funcionara instalaría en otro entorno distinto del que ejecuta la app.
         raise BackupError(
-            "Falta la herramienta de descifrado. Instálala con:\n"
-            "    pip install wa-crypt-tools"
+            "Falta la herramienta de descifrado. Instálala en el mismo entorno que "
+            "ejecuta la app:\n"
+            f"    {sys.executable} -m pip install wa-crypt-tools"
         ) from exc
     except subprocess.TimeoutExpired as exc:
         raise BackupError("El descifrado ha tardado demasiado y se ha cancelado.") from exc
