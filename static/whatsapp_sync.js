@@ -181,6 +181,10 @@ async function cargaEstado() {
     ["Base descifrada", s.decrypted.present
       ? `${formatBytes(s.decrypted.size)} — del ${s.decrypted.modified.replace("T", " ")}` : "no"],
     ["Agenda de contactos", s.agenda_cifrada ? "descargada" : "no"],
+    // Las incrementales solo aparecen cuando WhatsApp ha hecho alguna después de la
+    // última copia completa; lo normal es que no haya ninguna recién sincronizado.
+    ["Copias incrementales", s.incrementales?.length
+        ? `${s.incrementales.length} descargada(s)` : "ninguna pendiente"],
     ["Índices de consulta", s.indices_listos ? "listos" : "sin preparar"],
     ["Herramienta de descifrado", s.tool_installed ? "instalada" : `FALTA — ${s.tool_command || ""}`],
   ];

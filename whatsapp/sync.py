@@ -192,6 +192,20 @@ def _descarga_base(job: dict) -> None:
     job["base"]["descargada"] = True
     job["base"]["bytes"] = CIFRADA.stat().st_size
 
+    # Lo hablado desde esa copia completa está en las incrementales, que son diminutas
+    # (decenas de KB) y sin ellas se pierde el último tramo: aquí, un día entero.
+    try:
+        traidas = backup.descarga_incrementales(copias["incrementales"])
+        job["base"]["incrementales"] = [t["name"] for t in traidas]
+        if traidas:
+            job["avisos"].append(
+                f"Se han traído {len(traidas)} copias incrementales con lo posterior a "
+                f"«{mejor['name']}». Se descifran junto a la base y se guardan aparte: "
+                f"no la sustituyen."
+            )
+    except Exception as exc:
+        job["avisos"].append(f"No se pudieron traer las copias incrementales: {exc}")
+
     # La agenda es un fichero aparte y diminuto (30 KB), pero es lo único que convierte
     # números de teléfono en nombres. Sin ella la interfaz es mucho peor.
     job["fase"] = "agenda"

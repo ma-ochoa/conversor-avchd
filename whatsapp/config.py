@@ -23,6 +23,15 @@ DESCIFRADA = DIR_DATOS / "msgstore.db"
 AGENDA_CIFRADA = DIR_DATOS / "wa.db.crypt15"
 AGENDA = DIR_DATOS / "wa.db"
 
+# **Las copias incrementales.** WhatsApp hace una copia completa cada varios días y, entre
+# medias, incrementales con lo hablado desde entonces. La completa por sí sola deja fuera
+# ese hueco: en el móvil de prueba, un día entero de mensajes.
+#
+# Van en su propia carpeta y **no sustituyen a la base**: son un complemento con las filas
+# nuevas, y mezclarlas a ciegas con `msgstore.db` sería inventarse una fusión que WhatsApp
+# hace de otra manera al restaurar.
+INCREMENTALES = DIR_DATOS / "incrementales"
+
 # **La copia anterior, conservada a propósito.** Cada sincronización trae una base nueva
 # del móvil, y esa base puede tener MENOS que la anterior: el usuario borra conversaciones
 # y fotos para liberar espacio en el teléfono. Sobrescribir sin más convertiría el archivo

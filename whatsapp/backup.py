@@ -30,7 +30,8 @@ from datetime import datetime
 from pathlib import Path
 
 from . import dispositivo
-from .config import AGENDA, AGENDA_CIFRADA, CIFRADA, DESCIFRADA, DIR_DATOS
+from .config import (AGENDA, AGENDA_CIFRADA, CIFRADA, DESCIFRADA, DIR_DATOS,
+                     INCREMENTALES)
 
 # Los 64 dígitos hexadecimales que enseña WhatsApp, normalmente en grupos de 4.
 _CLAVE_RE = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
@@ -45,6 +46,16 @@ class BackupError(RuntimeError):
 
 class ClaveInvalida(BackupError):
     """La clave no tiene la forma esperada, o no abre esta copia."""
+
+
+# Cómo empiezan las incrementales. **El nombre no basta para saber si una aporta algo**:
+# al hacer una copia completa, WhatsApp renombra las incrementales pendientes añadiéndoles
+# la fecha (`msgstore-increment-1.db.crypt15` pasa a
+# `msgstore-increment-1-2026-08-28.1.db.crypt15`) y su contenido ya está dentro de la
+# completa. Lo que decide es la fecha: solo sirven las posteriores a la completa que se
+# vaya a usar. Comprobado en el móvil de prueba, donde la copia de la madrugada absorbió
+# la incremental del día anterior.
+_PREFIJO_INCREMENTAL = "msgstore-increment"
 
 
 def _raiz_databases(root_media: str) -> str:
@@ -90,9 +101,37 @@ def busca_copias() -> dict:
         "folder": databases,
         "backups": copias,
         "best": utilizable,
+        # Lo hablado **después** de la copia completa que se va a usar. Sin comparar
+        # fechas se estarían bajando trozos que la completa ya contiene.
+        "incrementales": [c for c in copias
+                          if c["usable"] and not c["full"]
+                          and c["name"].startswith(_PREFIJO_INCREMENTAL)
+                          and utilizable and (c["date"] or "") > (utilizable["date"] or "")],
         # Lo que la interfaz necesita para decidir si enseña las instrucciones.
         "needs_e2e": utilizable is None,
     }
+
+
+def descarga_incrementales(copias: list[dict], progress_cb=None) -> list[dict]:
+    """Trae las incrementales a `INCREMENTALES/`. Devuelve qué se ha traído.
+
+    Se guardan aparte a propósito: no sustituyen a `msgstore.db`, la complementan.
+    """
+    INCREMENTALES.mkdir(parents=True, exist_ok=True)
+    traidas = []
+    for copia in copias:
+        destino = INCREMENTALES / copia["name"]
+        # Ya descargada y del mismo tamaño: no se vuelve a traer. Una incremental no
+        # cambia una vez escrita; WhatsApp crea otra con el número siguiente.
+        if destino.is_file() and destino.stat().st_size == (copia.get("size") or 0):
+            traidas.append({**copia, "ruta": str(destino), "ya_estaba": True})
+            continue
+        dispositivo.descarga(copia["folder"], copia["name"], destino,
+                             copia.get("size") or None)
+        traidas.append({**copia, "ruta": str(destino), "ya_estaba": False})
+        if progress_cb:
+            progress_cb(len(traidas), len(copias))
+    return traidas
 
 
 def descarga_copia(copia: dict, progress_cb=None) -> Path:
@@ -149,7 +188,52 @@ def descifra_todo(clave: str) -> dict:
         except BackupError as exc:
             # Que falle la agenda no debe tumbar lo importante.
             resultado["agenda_error"] = str(exc)
+    resultado["incrementales"] = descifra_incrementales(clave)
     return resultado
+
+
+def descifra_incrementales(clave: str) -> list[dict]:
+    """Descifra las incrementales descargadas y dice qué trae cada una.
+
+    Van una a una y **ninguna puede tumbar el descifrado de los mensajes**: son un extra,
+    y un fallo aquí no debe costar la base entera. Se comprueba además que lo descifrado
+    sea de verdad una base con mensajes, en vez de darlo por bueno por no dar error.
+    """
+    salida = []
+    if not INCREMENTALES.is_dir():
+        return salida
+    for cifrada in sorted(INCREMENTALES.glob("*.crypt15")):
+        entrada = {"nombre": cifrada.name}
+        try:
+            destino = descifra(clave, cifrada, cifrada.with_suffix("").with_suffix(".db"))
+            entrada.update({"ruta": str(destino), **_que_trae(destino)})
+        except BackupError as exc:
+            entrada["error"] = str(exc)
+        salida.append(entrada)
+    return salida
+
+
+def _que_trae(db: Path) -> dict:
+    """Cuántos mensajes hay en una base descifrada, y de cuándo son.
+
+    Sirve para dos cosas: enseñar si la incremental aporta algo, y comprobar que el
+    fichero es una base legible — que se descifre sin error no garantiza lo segundo.
+    """
+    try:
+        con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
+    except sqlite3.Error as exc:
+        return {"utilizable": False, "detalle": str(exc)}
+    try:
+        n = con.execute("SELECT COUNT(*) FROM message").fetchone()[0]
+        desde, hasta = con.execute(
+            "SELECT MIN(timestamp), MAX(timestamp) FROM message WHERE timestamp > 0"
+        ).fetchone()
+        return {"utilizable": True, "mensajes": n, "desde": desde, "hasta": hasta}
+    except sqlite3.Error as exc:
+        # Una incremental puede no ser una base al uso; se dice, en vez de fingir que sí.
+        return {"utilizable": False, "detalle": str(exc)}
+    finally:
+        con.close()
 
 
 def descifra(clave: str, cifrada: Path | None = None,
@@ -277,6 +361,8 @@ def estado() -> dict:
             "modified": (datetime.fromtimestamp(descifrada.stat().st_mtime)
                          .isoformat(timespec="seconds") if descifrada else None),
         },
+        "incrementales": sorted(
+            p.name for p in INCREMENTALES.glob("*.crypt15")) if INCREMENTALES.is_dir() else [],
         "tool_installed": _herramienta_instalada(),
         # La interfaz enseña este mismo comando, para no inventarse uno que no funcione.
         "tool_command": _como_instalar(),
