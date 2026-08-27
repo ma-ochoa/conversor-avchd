@@ -4,8 +4,15 @@
 // hay que guardarlos, porque el nombre es la llave con la base de datos), pero aquí se
 // ven por chat, que es como uno los recuerda. El cruce lo hace `galeria.py`.
 
+// Cuántas celdas se pintan de golpe. Generar una miniatura cuesta unos 70 ms (ffmpeg o
+// sips, da igual), así que soltar 400 de una vez son medio minuto de CPU peleándose y una
+// rejilla en blanco. De 60 en 60 la primera tanda entra en cuatro segundos y las
+// siguientes ya salen de la caché.
+const POR_TANDA = 60;
+
 let chatActual = null;
 let mediosActuales = [];
+let pintados = 0;
 let todosLosChats = [];
 const elegidos = new Set();
 
@@ -80,12 +87,22 @@ async function abreChat(id) {
 function pintaRejilla() {
   const rejilla = el("rejilla");
   rejilla.innerHTML = "";
+  pintados = 0;
   if (!mediosActuales.length) {
     rejilla.innerHTML = "<p class='vacio'>No hay archivos que enseñar.</p>";
     return;
   }
+  pintaTanda();
+}
 
-  for (const m of mediosActuales) {
+/** Añade la siguiente tanda de celdas. Se llama al abrir y al llegar abajo. */
+function pintaTanda() {
+  const rejilla = el("rejilla");
+  const tanda = mediosActuales.slice(pintados, pintados + POR_TANDA);
+  if (!tanda.length) return;
+  pintados += tanda.length;
+
+  for (const m of tanda) {
     const celda = document.createElement("div");
     celda.className = "celda";
     const info = tipoDe(m.tipo);
@@ -100,6 +117,9 @@ function pintaRejilla() {
     }
 
     const url = `/api/whatsapp/archivo?ruta=${encodeURIComponent(m.local)}`;
+    // La rejilla pide **miniaturas**, no los originales: con los originales, 400 celdas
+    // obligaban al navegador a decodificar más de 100 megapíxeles y tardaban minutos.
+    const chica = `/api/whatsapp/miniatura?ruta=${encodeURIComponent(m.local)}`;
     const casilla = document.createElement("input");
     casilla.type = "checkbox";
     casilla.checked = elegidos.has(m.local);
@@ -111,10 +131,15 @@ function pintaRejilla() {
 
     // `#t=0.5` pide el fotograma de medio segundo: sin eso el navegador pinta un
     // rectángulo negro y la rejilla de vídeos no se puede leer de un vistazo.
-    const vista = (m.tipo === "video" || m.tipo === "gif" || m.tipo === "notas_video")
-      ? Object.assign(document.createElement("video"),
-                      { src: url + "#t=0.5", preload: "metadata", muted: true })
-      : Object.assign(document.createElement("img"), { src: url, loading: "lazy", alt: "" });
+    // Los vídeos también entran como imagen: ffmpeg saca un fotograma y así la rejilla
+    // no arrastra decenas de reproductores de vídeo abiertos a la vez.
+    const vista = Object.assign(document.createElement("img"),
+                                { src: chica, loading: "lazy", alt: "" });
+    vista.addEventListener("error", () => {
+      // Sin miniatura posible (PDF, audio): se enseña el icono del tipo.
+      celda.classList.add("ausente");
+      celda.innerHTML = `<div>${info.icono}<br>${esc(m.nombre || info.etiqueta)}</div>`;
+    });
     if (m.tipo === "notas_video") vista.classList.add("redonda");
     vista.addEventListener("click", () => abreVisor(url, m));
 
@@ -126,7 +151,39 @@ function pintaRejilla() {
     celda.classList.toggle("elegida", casilla.checked);
     rejilla.appendChild(celda);
   }
+  actualizaPie();
 }
+
+// Se vigila el pie de la rejilla con un observador de intersección en vez de escuchar
+// `scroll`. Un escuchador de scroll obliga a acertar con **qué** elemento desplaza —y
+// bastó un `min-height` mal puesto para que no fuera el que yo creía— mientras que esto
+// se dispara cuando el pie entra en pantalla, venga el desplazamiento de donde venga.
+const observador = new IntersectionObserver((entradas) => {
+  if (entradas.some((e) => e.isIntersecting)) pintaTanda();
+}, { root: el("rejilla"), rootMargin: "300px" });
+
+function actualizaPie() {
+  const rejilla = el("rejilla");
+  const viejo = rejilla.querySelector(".pie-rejilla");
+  if (viejo) { observador.unobserve(viejo); viejo.remove(); }
+  if (pintados >= mediosActuales.length) return;
+
+  const pie = document.createElement("p");
+  pie.className = "pie-rejilla muted";
+  pie.textContent = `Mostrando ${formatNumero(pintados)} de ${formatNumero(mediosActuales.length)}…`;
+  rejilla.appendChild(pie);
+  observador.observe(pie);
+}
+
+// Cinturón y tirantes: además del observador, un escuchador de scroll. Son dos
+// disparadores independientes para lo mismo —`pintaTanda` es idempotente respecto al
+// tramo ya pintado— y basta con que funcione uno. No es paranoia gratuita: durante el
+// desarrollo hubo un momento en que la rejilla no era el elemento que desplazaba y
+// nadie se enteró hasta mirarlo con lupa.
+el("rejilla").addEventListener("scroll", () => {
+  const r = el("rejilla");
+  if (r.scrollTop + r.clientHeight > r.scrollHeight - 400) pintaTanda();
+});
 
 el("solo-disco").addEventListener("change", () => { if (chatActual) abreChat(chatActual); });
 

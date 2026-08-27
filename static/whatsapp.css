@@ -64,7 +64,8 @@ progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
   overflow: hidden;
 }
 
-.panel-chats { background: var(--panel, #1b1f24); display: flex; flex-direction: column; min-width: 0; }
+.panel-chats { background: var(--panel, #1b1f24); display: flex; flex-direction: column;
+               min-width: 0; min-height: 0; }
 .panel-chats > input[type=search] { margin: 0.6rem; }
 .panel-chats > .muted { margin: 0 0.75rem 0.4rem; font-size: 0.78rem; }
 
@@ -93,7 +94,18 @@ progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 
-.panel-conversacion { background: var(--panel, #1b1f24); display: flex; flex-direction: column; min-width: 0; }
+/* `min-height: 0` es lo que hace que el panel se quede en la altura del contenedor en
+   vez de estirarse con su contenido: sin él, un hijo de flex/grid no encoge por debajo
+   de su tamaño natural, la rejilla crecía a 51.000 px de alto y no había scroll propio
+   que disparara la carga de la siguiente tanda. */
+.panel-conversacion { background: var(--panel, #1b1f24); display: flex; flex-direction: column;
+                      min-width: 0; min-height: 0; }
+.panel-conversacion > .barra-galeria { flex: none; }
+/* `grid-auto-rows` fija la altura de fila. Sin él, las filas se dimensionaban por
+   contenido y quedaban en 25 px mientras las celdas medían 152: se solapaban unas sobre
+   otras y el contenedor apenas tenía scroll. */
+.panel-conversacion > .rejilla { flex: 1; min-height: 0; overflow-y: auto;
+                                 align-content: start; grid-auto-rows: 150px; }
 .cabecera-chat {
   display: flex; justify-content: space-between; align-items: center; gap: 1rem;
   padding: 0.6rem 1rem;
@@ -184,7 +196,7 @@ progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
 
 /* ================================================================= galería */
 
-.rejilla { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
+.rejilla { display: grid; padding: 1rem; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
 .celda { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: var(--border); }
 .celda img, .celda video { width: 100%; height: 100%; object-fit: cover; cursor: pointer; }
 .celda .marca { position: absolute; left: 0.3rem; bottom: 0.3rem; font-size: 0.8rem; text-shadow: 0 0 3px #000; }
@@ -194,8 +206,9 @@ progress { width: 100%; max-width: 480px; display: block; margin: 0.5rem 0; }
 
 .barra-galeria {
   display: flex; gap: 0.8rem; align-items: center; flex-wrap: wrap;
-  padding: 0.5rem 0; position: sticky; top: 0; z-index: 3;
-  background: var(--bg, #14181d);
+  padding: 0.6rem 1rem; z-index: 3;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel, #1b1f24);
 }
 .peligro { background: #7a2b2b; border-color: #a33; }
 
@@ -214,3 +227,10 @@ table.compacta td, table.compacta th { padding: 0.3rem 0.6rem; font-size: 0.85re
    porque no son vídeos normales. */
 video.redonda { border-radius: 50%; aspect-ratio: 1; object-fit: cover; max-width: 220px; }
 .celda video.redonda { max-width: none; border-radius: 50%; }
+
+/* Algunos mensajes de error explican varios pasos y vienen con saltos de línea (el de
+   «esto es una contraseña, no una clave»). Sin esto se ven como un párrafo apelmazado. */
+#wa-descifrar-estado { white-space: pre-line; display: block; margin-left: 0; }
+
+/* El pie de la rejilla ocupa toda la fila, no una celda. */
+.pie-rejilla { grid-column: 1 / -1; text-align: center; padding: 0.8rem 0; margin: 0; }

@@ -78,7 +78,8 @@ from importer.thumbs import get_phone_thumbnail, get_thumbnail
 import whatsapp as wa
 from whatsapp import (backup as wa_backup, chats as wa_chats,
                       galeria as wa_galeria, jobs as wa_jobs,
-                      media as wa_media, sync as wa_sync)
+                      media as wa_media, miniaturas as wa_miniaturas,
+                      sync as wa_sync)
 
 app = Flask(__name__)
 
@@ -1105,16 +1106,29 @@ def whatsapp_galeria_borrar():
     return jsonify(wa_galeria.borra([str(r) for r in rutas]))
 
 
-@app.route("/api/whatsapp/archivo")
-def whatsapp_archivo():
-    """Sirve un medio ya copiado al ordenador.
+@app.route("/api/whatsapp/miniatura")
+def whatsapp_miniatura():
+    """Versión pequeña de un medio, para las rejillas.
 
-    **Solo dentro de la carpeta de destino.** La ruta llega desde el navegador, y sin
-    esta comprobación bastaría pedir `?ruta=/etc/passwd` para leer cualquier fichero del
-    equipo. Se compara la ruta *resuelta* (con enlaces simbólicos deshechos) para que un
-    enlace dentro del destino tampoco sirva de puente hacia fuera.
+    Mismo control de contención que `/archivo`: la ruta llega del navegador y solo se
+    admite dentro de la carpeta de destino. Si no se puede generar (un PDF, un audio) se
+    responde 404 y el navegador enseña el icono del tipo, que es lo correcto.
     """
-    ruta = request.args.get("ruta", "")
+    destino = _wa_ruta_permitida(request.args.get("ruta", ""))
+    try:
+        return send_file(wa_miniaturas.miniatura(destino), conditional=True,
+                         max_age=86400)
+    except wa_miniaturas.SinMiniatura:
+        abort(404)
+
+
+def _wa_ruta_permitida(ruta: str) -> Path:
+    """Resuelve una ruta pedida por el navegador y comprueba que cae dentro del destino.
+
+    Sin esto bastaría pedir `?ruta=/etc/passwd` para leer cualquier fichero del equipo.
+    Se compara la ruta **resuelta** —con enlaces simbólicos deshechos— para que un enlace
+    colocado dentro del destino tampoco sirva de puente hacia fuera.
+    """
     if not ruta:
         abort(404)
     raiz = Path(wa.config.load_config()["destination"]).expanduser().resolve()
@@ -1124,7 +1138,19 @@ def whatsapp_archivo():
         abort(404)
     if not destino.is_relative_to(raiz) or not destino.is_file():
         abort(403)
-    return send_file(destino, conditional=True)
+    return destino
+
+
+@app.route("/api/whatsapp/archivo")
+def whatsapp_archivo():
+    """Sirve un medio ya copiado al ordenador.
+
+    **Solo dentro de la carpeta de destino.** La ruta llega desde el navegador, y sin
+    esta comprobación bastaría pedir `?ruta=/etc/passwd` para leer cualquier fichero del
+    equipo. Se compara la ruta *resuelta* (con enlaces simbólicos deshechos) para que un
+    enlace dentro del destino tampoco sirva de puente hacia fuera.
+    """
+    return send_file(_wa_ruta_permitida(request.args.get("ruta", "")), conditional=True)
 
 
 # --------------------------------------------------------- medios: escaneo y copia

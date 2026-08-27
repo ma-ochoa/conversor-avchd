@@ -115,8 +115,15 @@ def normaliza_clave(clave: str) -> str:
         # Se dice cuántos caracteres había, nunca cuáles.
         raise ClaveInvalida(
             f"Eso no parece la clave: se esperan 64 dígitos hexadecimales y has puesto "
-            f"{len(limpia)} caracteres. Si lo que tienes es una contraseña, vuelve a "
-            f"WhatsApp y cambia a «clave de cifrado de 64 dígitos»."
+            f"{len(limpia)} caracteres.\n\n"
+            "Si lo que tienes es una CONTRASEÑA, esta aplicación no puede descifrar "
+            "con ella, y no es un fallo suyo: en modo contraseña la clave real no está "
+            "en tu poder, sino en un almacén de WhatsApp que la libera tras comprobar "
+            "la contraseña contra sus servidores. No hay nada que ejecutar en local.\n\n"
+            "Para usar esta aplicación: WhatsApp → Ajustes → Chats → Copia de seguridad "
+            "→ Copia cifrada de extremo a extremo → cambiar a «clave de cifrado de 64 "
+            "dígitos». Ojo: sustituye a la contraseña, no se suman, y a partir de ahí la "
+            "clave es lo único que restaura tus copias."
         )
     return limpia.lower()
 
