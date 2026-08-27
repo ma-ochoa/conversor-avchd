@@ -145,9 +145,77 @@ def lee_vcard(ruta: Path) -> list[dict]:
 
 # ----------------------------------------------------------------------- CSV
 
-# Cómo se llaman las columnas en el CSV de Google Contactos, en inglés y en español.
-_COL_NOMBRE = ("name", "nombre", "display name", "nombre para mostrar", "file as")
-_COL_TEL = ("phone", "teléfono", "telefono")
+# Columnas que ya traen el nombre entero. Las tienen los formatos antiguos de Google y
+# los de otros sitios; **el CSV que exporta hoy Google Contactos no trae ninguna**: el
+# nombre viene siempre partido, y darlo por perdido dejaba la agenda casi vacía.
+_COL_NOMBRE = ("name", "display name", "full name", "nombre para mostrar")
+
+# Con qué columnas se arma el nombre cuando viene partido, que es el caso normal hoy.
+# Dentro de cada grupo se coge la primera que traiga algo.
+_COL_PARTES = (
+    ("first name", "given name", "nombre"),
+    ("middle name", "additional name", "segundo nombre"),
+    ("last name", "family name", "apellidos", "apellido"),
+)
+
+# Cuando no hay nombre de persona. Una agenda está llena de comercios y servicios
+# —talleres, médicos, restaurantes— que solo tienen razón social.
+_COL_RESPALDO = ("file as", "organization name", "organization", "company", "nickname",
+                 "empresa", "organización", "organizacion")
+
+_COL_TEL = ("phone", "teléfono", "telefono", "mobile", "móvil", "movil")
+
+# `Phone 1 - Label` trae «Mobile» o «Casa», no un número.
+_FIN_ETIQUETA = ("label", "type", "etiqueta", "tipo")
+
+# `Phonetic First Name` contiene «phone» sin tener nada que ver con un teléfono.
+_NO_ES_TEL = ("phonetic", "fonetic", "fonétic")
+
+
+def _fila_limpia(fila: dict) -> dict[str, str]:
+    """La fila con los nombres de columna en minúsculas y sin espacios sobrantes."""
+    limpia = {}
+    for columna, valor in fila.items():
+        # Una fila con más campos que la cabecera se lo lleva todo a la clave None, y
+        # como lista. Se descarta esa fila torcida en vez de reventar la importación.
+        if columna is None or isinstance(valor, list):
+            continue
+        limpia[columna.strip().lower()] = (valor or "").strip()
+    return limpia
+
+
+def _nombre_de(fila: dict[str, str]) -> str:
+    """El nombre del contacto, venga como venga en el CSV.
+
+    Se prueba primero una columna con el nombre entero; si no la hay, se arma con las
+    partes; y si tampoco —los comercios no tienen nombre de pila— se tira de la
+    organización.
+    """
+    for columna in _COL_NOMBRE:
+        if fila.get(columna):
+            return fila[columna]
+
+    partes = []
+    for alternativas in _COL_PARTES:
+        for columna in alternativas:
+            if fila.get(columna):
+                partes.append(fila[columna])
+                break
+    if partes:
+        return " ".join(partes)
+
+    for columna in _COL_RESPALDO:
+        if fila.get(columna):
+            return fila[columna]
+    return ""
+
+
+def _es_columna_telefono(columna: str) -> bool:
+    if any(x in columna for x in _NO_ES_TEL):
+        return False
+    if not any(x in columna for x in _COL_TEL):
+        return False
+    return columna.rsplit("-", 1)[-1].strip() not in _FIN_ETIQUETA
 
 
 def lee_csv(ruta: Path) -> list[dict]:
@@ -162,23 +230,16 @@ def lee_csv(ruta: Path) -> list[dict]:
         filas = list(csv.DictReader(f, dialect=dialecto))
 
     contactos = []
-    for fila in filas:
-        nombre = ""
+    for cruda in filas:
+        fila = _fila_limpia(cruda)
         numeros = []
         for columna, valor in fila.items():
-            if not columna or not valor or not valor.strip():
-                continue
-            baja = columna.strip().lower()
-            if not nombre and any(baja == c or baja.startswith(c) for c in _COL_NOMBRE):
-                # Se descartan las columnas de "given name"/"family name" sueltas: la de
-                # nombre completo es la que interesa y suele ir primero.
-                if "given" not in baja and "family" not in baja:
-                    nombre = valor.strip()
-            elif any(c in baja for c in _COL_TEL) and "type" not in baja:
-                # Google separa varios números en una celda con ' ::: '.
-                numeros += [n for n in re.split(r":::|\s*/\s*", valor) if normaliza(n)]
+            if valor and _es_columna_telefono(columna):
+                # Google separa varios números de una misma celda con ' ::: '.
+                numeros += [n.strip() for n in re.split(r":::|\s*/\s*", valor)
+                            if normaliza(n)]
         if numeros:
-            contactos.append({"nombre": nombre, "numeros": [n.strip() for n in numeros]})
+            contactos.append({"nombre": _nombre_de(fila), "numeros": numeros})
     return contactos
 
 

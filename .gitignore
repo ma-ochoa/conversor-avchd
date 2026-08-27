@@ -46,3 +46,11 @@ whatsapp-datos/
 *.crypt14
 msgstore*.db
 wa.db
+
+# Agendas exportadas para poner nombre a los números: nombres y teléfonos de gente real,
+# y basta un `git add .` para publicarlos. Se leen desde donde estén, no hace falta que
+# vivan en el proyecto.
+*.vcf
+*.vcard
+contacts.csv
+contactos*.csv
