@@ -166,6 +166,46 @@ def _names(camera_list) -> list[str]:
     return [camera_list.get_name(i) for i in range(len(camera_list))]
 
 
+def _almacenamientos(camera) -> list[tuple[str, str]]:
+    """(carpeta, nombre legible) de cada almacenamiento que anuncia el móvil.
+
+    En MTP la raíz del dispositivo son sus almacenamientos, pero hay móviles que no los
+    exponen como carpetas de `/`: la raíz sale vacía aunque todo el contenido esté ahí,
+    un nivel más abajo, colgando de `/store_00010001`. Le pasa al Galaxy S25 (SM-S938B),
+    y deja el explorador en blanco con el móvil conectado, desbloqueado y en MTP — es
+    decir, con el mismo aspecto que un móvil bloqueado o en «solo carga», que es el
+    diagnóstico equivocado al que llevaba.
+
+    Preguntando por los almacenamientos sí aparecen, y de paso traen un nombre que se
+    puede enseñar («Almacenamiento interno») en vez del identificador crudo.
+    """
+    gp = _gphoto()
+    salida = []
+    for info in gp.check_result(gp.gp_camera_get_storageinfo(camera)):
+        base = (getattr(info, "basedir", "") or "").rstrip("/")
+        if not base:
+            continue
+        etiqueta = (getattr(info, "description", "") or "").strip()
+        salida.append((base, etiqueta or base.lstrip("/")))
+    return salida
+
+
+def _raices(camera, path: str) -> list[str]:
+    """Por dónde empezar a recorrer `path`: normalmente él mismo.
+
+    La excepción es la raíz de un móvil que no anuncia sus almacenamientos como carpetas
+    (ver `_almacenamientos`): hay que entrar por cada uno, o el recorrido no ve nada.
+    """
+    if path.rstrip("/"):
+        return [path]
+    try:
+        if _names(camera.folder_list_folders(path)):
+            return [path]
+    except Exception:
+        pass          # la raíz no se deja listar; se prueba por almacenamiento
+    return [base for base, _ in _almacenamientos(camera)] or [path]
+
+
 def detect() -> list[dict]:
     """Móviles que se pueden abrir ahora mismo. Lista vacía si no hay ninguno."""
     if not available():
@@ -212,14 +252,30 @@ def list_folder(path: str = "/", count_files: bool = False) -> dict:
     cambio, es instantáneo.
     """
     def operation(camera):
-        folders = _names(camera.folder_list_folders(path))
+        en_raiz = not path.rstrip("/")
+        fallo = None
+        try:
+            folders = _names(camera.folder_list_folders(path))
+        except Exception as exc:
+            # Que la raíz no se deje listar no es concluyente: hay móviles que solo
+            # responden por almacenamiento (ver `_almacenamientos`). Se guarda el error
+            # por si al final tampoco hay almacenamientos que enseñar.
+            if not en_raiz:
+                raise
+            folders, fallo = [], exc
+        # Sin carpetas en la raíz, los almacenamientos son la única entrada al contenido.
+        stores = _almacenamientos(camera) if en_raiz and not folders else []
+        if fallo is not None and not stores:
+            raise fallo
         files = _names(camera.folder_list_files(path)) if count_files else []
-        return folders, files
+        return folders, files, stores
 
-    folders, filenames = _retry(operation)
+    folders, filenames, stores = _retry(operation)
     base = path.rstrip("/")
 
-    subfolders = []
+    # Los almacenamientos no pasan por el filtro de ruido: sin ellos no se llega a nada.
+    subfolders = [{"name": etiqueta, "path": ruta, "interesting": True}
+                  for ruta, etiqueta in stores]
     for name in sorted(folders, key=str.lower):
         if name.lower() in _NOISE:
             continue
@@ -313,7 +369,8 @@ def list_files(path: str, recursive: bool = True, limit: int = 0,
     def operation(camera):
         if progress_cb:
             progress_cb(path, 0)
-        scan(camera, path)
+        for raiz in _raices(camera, path):
+            scan(camera, raiz)
         return entries
 
     _retry(operation)
