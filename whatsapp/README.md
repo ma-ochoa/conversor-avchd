@@ -53,6 +53,8 @@ desenredar dependencias.
 | `backup.py` | Buscar, traer y descifrar la base | `wadecrypt` → librería equivalente |
 | `chats.py` | Consultas de lectura (repositorio) | SQL casi idéntico |
 | `galeria.py` | Cruce medios ↔ conversaciones | Directo |
+| `agenda.py` | Contactos importados de fuera (.vcf / .csv) | Directo |
+| `miniaturas.py` | Miniaturas cacheadas de los medios | `ffmpeg` / `sips` → equivalente |
 | `sync.py` | Orquestación de la sincronización | Directo; `FASES` es el contrato |
 | `jobs.py` | Trabajos en segundo plano | Task/BackgroundService |
 
@@ -75,8 +77,11 @@ Todo esto está comprobado sobre un Galaxy S25 real con WhatsApp 2.26 y una base
    basura. Lo único que distingue un descifrado bueno es que el resultado empiece por la
    firma de SQLite. Ver `backup.descifra()`.
 
-4. **Los nombres no están en `msgstore.db`.** Están en `wa.db`, otra base que WhatsApp
-   guarda en `Backups/` (no en `Databases/`). Sin ella la interfaz enseña números.
+4. **Los nombres pueden no estar en ninguna base.** Se buscan en `wa.db` —otra base que
+   WhatsApp guarda en `Backups/`, no en `Databases/`— pero en un Galaxy S25 real esa
+   tabla `wa_contacts` estaba **vacía**: WhatsApp lee la agenda del sistema al vuelo en
+   vez de copiarla. Y la agenda del sistema no sale por MTP. Por eso existe `agenda.py`,
+   que importa un `.vcf` o un CSV de Google y cruza por número.
 
 5. **La copia viene sin índices.** WhatsApp guarda la base con 30 índices pero ninguno
    sobre `message.chat_row_id`. Abrir un chat obligaba a recorrer los 611.637 mensajes:
@@ -128,7 +133,9 @@ Los medios van aparte, a la carpeta que elija el usuario (por defecto
 | Galería por conversación + limpieza | Funciona |
 | Contactos | Funciona |
 | Mensajes eliminados (marca + interruptor) | Funciona |
-| Búsqueda cruzada foto → conversaciones | Funciona (básica) |
+| Búsqueda cruzada foto → conversaciones | Funciona, con salto al mensaje |
+| Agenda importada (.vcf / CSV) | Funciona |
+| Miniaturas cacheadas | Funciona |
 | **Fusión acumulativa del histórico** | **Diseñada, sin implementar** — [HISTORICO.md](HISTORICO.md) |
 | Guardar la clave con Fernet | Sin empezar |
 | Búsqueda de texto en mensajes | Sin empezar |

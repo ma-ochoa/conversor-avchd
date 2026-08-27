@@ -25,6 +25,7 @@ solo 1.569 han escrito algún mensaje.
 import sqlite3
 from pathlib import Path
 
+from . import agenda as agenda_externa
 from .config import AGENDA, DESCIFRADA
 
 # Qué es cada `message.message_type`, deducido cruzando con `message_media.mime_type`
@@ -168,8 +169,8 @@ def _tiene_agenda(con: sqlite3.Connection) -> bool:
         return False
 
 
-def _nombres(con: sqlite3.Connection) -> dict[str, str]:
-    """`raw_string` del jid -> nombre de la agenda.
+def _nombres_wa_db(con: sqlite3.Connection) -> dict[str, str]:
+    """`raw_string` del jid -> nombre según la agenda que WhatsApp guarda en `wa.db`.
 
     Se trae entera de una vez (son unos pocos miles) en vez de hacer un JOIN por consulta:
     `wa.db` está adjunta como base separada y cruzarla en cada listado de mensajes salía
@@ -186,6 +187,33 @@ def _nombres(con: sqlite3.Connection) -> dict[str, str]:
     expr = "COALESCE(" + ", ".join(f"NULLIF({c}, '')" for c in prefiere) + ")"
     return {r["jid"]: r["nombre"] for r in con.execute(
         f"SELECT jid, {expr} AS nombre FROM agenda.wa_contacts WHERE {expr} IS NOT NULL")}
+
+
+def _nombres(con: sqlite3.Connection) -> dict[str, str]:
+    """Identificador de contacto -> nombre, juntando las dos fuentes posibles.
+
+    Primero la agenda que WhatsApp guarda en `wa.db`; después la que el usuario haya
+    importado de fuera, que **manda sobre la anterior** porque es la que acaba de traer
+    y la que refleja cómo tiene guardada a la gente hoy.
+
+    La segunda hace falta más de lo que parece: en un Galaxy S25 real, `wa_contacts`
+    estaba **vacía** —WhatsApp lee la agenda del sistema al vuelo en vez de copiarla—,
+    así que sin importar nada de fuera la interfaz solo puede enseñar números.
+    """
+    nombres = _nombres_wa_db(con)
+
+    indice = agenda_externa.cargada()["indice"]
+    if not indice:
+        return nombres
+
+    # Se cruza una sola vez por consulta: recorrer 120.000 identificadores llamando a
+    # `busca()` por cada mensaje pintado sería absurdo.
+    for fila in con.execute(
+            "SELECT raw_string, user FROM jid WHERE server = 's.whatsapp.net'"):
+        encontrado = agenda_externa.busca(fila["user"] or "", indice)
+        if encontrado:
+            nombres[fila["raw_string"]] = encontrado
+    return nombres
 
 
 def _bonito(raw: str | None, user: str | None, server: str | None,

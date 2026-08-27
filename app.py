@@ -76,7 +76,8 @@ from importer.plan import build_plan, free_space
 from importer.sources import describe_source, detect_sources
 from importer.thumbs import get_phone_thumbnail, get_thumbnail
 import whatsapp as wa
-from whatsapp import (backup as wa_backup, chats as wa_chats,
+from whatsapp import (agenda as wa_agenda, backup as wa_backup,
+                      chats as wa_chats,
                       galeria as wa_galeria, jobs as wa_jobs,
                       media as wa_media, miniaturas as wa_miniaturas,
                       sync as wa_sync)
@@ -1030,6 +1031,47 @@ def whatsapp_contactos():
         ))
     except wa_chats.SinBaseDeDatos as exc:
         return _wa_error(exc, 404)
+
+
+# ---------------------------------------------------------------- agenda externa
+
+@app.route("/api/whatsapp/agenda")
+def whatsapp_agenda():
+    datos = wa_agenda.cargada()
+    return jsonify({"origen": datos.get("origen"), "contactos": datos.get("contactos", 0),
+                    "numeros": datos.get("numeros", 0),
+                    "formato": datos.get("formato")})
+
+
+@app.route("/api/whatsapp/agenda/elegir", methods=["POST"])
+def whatsapp_agenda_elegir():
+    """Abre el diálogo del sistema para elegir el fichero de contactos."""
+    script = (
+        'POSIX path of (choose file with prompt "Elige la agenda exportada (.vcf o .csv)" '
+        'of type {"vcf", "vcard", "csv", "txt", "public.text", "public.vcard"})'
+    )
+    result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True)
+    if result.returncode != 0:
+        return jsonify({"canceled": True})
+    return jsonify({"path": result.stdout.strip()})
+
+
+@app.route("/api/whatsapp/agenda/importar", methods=["POST"])
+def whatsapp_agenda_importar():
+    ruta = (request.get_json(silent=True) or {}).get("path", "")
+    if not ruta:
+        return jsonify({"error": "No se ha indicado ningún fichero."}), 400
+    try:
+        return jsonify(wa_agenda.importa(ruta))
+    except (FileNotFoundError, ValueError) as exc:
+        return _wa_error(exc)
+    except Exception as exc:
+        return jsonify({"error": f"No se pudo leer la agenda: {exc}"}), 400
+
+
+@app.route("/api/whatsapp/agenda/olvidar", methods=["POST"])
+def whatsapp_agenda_olvidar():
+    return jsonify({"olvidada": wa_agenda.olvida()})
 
 
 @app.route("/api/whatsapp/jids")

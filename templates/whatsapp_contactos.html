@@ -5,6 +5,49 @@
   <p class="muted">Esta lista no existe como tal dentro de WhatsApp: se reconstruye de la
   tabla <code>jid</code> de la base de datos.</p>
 
+  <div class="block" id="bloque-agenda">
+    <h3>Agenda de nombres</h3>
+    <p class="muted" id="agenda-estado">Comprobando…</p>
+    <details>
+      <summary>De dónde sacar la agenda</summary>
+      <div class="instrucciones">
+        <p><strong>WhatsApp no guarda los nombres en ninguna parte que se pueda copiar.</strong>
+        Comprobado en este móvil: la tabla <code>wa_contacts</code> existe y tiene
+        <strong>cero filas</strong>. WhatsApp lee la agenda del sistema cada vez que la enseña, y
+        esa agenda vive donde no llega nadie sin <em>root</em> — igual que la base de mensajes.
+        Tampoco sale por USB: MTP expone el almacenamiento compartido, y la agenda no está ahí.</p>
+
+        <p>Así que hay que traerla de fuera. Cualquiera de estas sirve:</p>
+        <table class="compacta">
+          <thead><tr><th>De dónde</th><th>Cómo</th><th></th></tr></thead>
+          <tbody>
+            <tr><td><strong>App Contactos del Mac</strong></td>
+                <td>Archivo → Exportar → Exportar vCard</td>
+                <td class="si">Recomendado: ya tiene Google e iCloud unificados en un solo fichero</td></tr>
+            <tr><td>Google Contactos</td>
+                <td>contacts.google.com → Exportar → vCard o CSV de Google</td><td></td></tr>
+            <tr><td>iCloud</td>
+                <td>icloud.com/contacts → Exportar vCard</td><td></td></tr>
+            <tr><td>El propio móvil</td>
+                <td>App Contactos → Exportar a .vcf en la memoria interna</td>
+                <td>Luego se lee por USB</td></tr>
+            <tr><td>Copia de un iPhone</td>
+                <td><code>AddressBook.sqlitedb</code> dentro de la copia local</td>
+                <td>Misma copia que da los chats</td></tr>
+          </tbody>
+        </table>
+        <p class="hint">Los números se casan por sus últimos 9 dígitos además de por el número
+        entero, para que <code>655 12 34 56</code> encaje con <code>+34 655 123 456</code>.</p>
+      </div>
+    </details>
+
+    <div class="path-row">
+      <button id="agenda-elegir" class="primary">Importar agenda…</button>
+      <button id="agenda-olvidar">Olvidar</button>
+    </div>
+    <p id="agenda-resultado" class="status-text"></p>
+  </div>
+
   <div id="explicacion-jid" class="block"></div>
 
   <div class="path-row">

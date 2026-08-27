@@ -76,6 +76,43 @@ el("busca").addEventListener("input", (e) => {
 });
 el("todos").addEventListener("change", carga);
 
+// ------------------------------------------------------------------ agenda
+
+async function estadoAgenda() {
+  const a = await api("/api/whatsapp/agenda").catch(() => null);
+  if (!a) return;
+  el("agenda-estado").textContent = a.numeros
+    ? `${formatNumero(a.contactos)} contactos importados (${formatNumero(a.numeros)} números). ` +
+      `Origen: ${a.origen}`
+    : "Sin agenda importada: los contactos se ven como números de teléfono.";
+  el("agenda-olvidar").disabled = !a.numeros;
+}
+
+el("agenda-elegir").addEventListener("click", async () => {
+  el("agenda-resultado").textContent = "";
+  const elegido = await postJson("/api/whatsapp/agenda/elegir", {}).catch(() => null);
+  if (!elegido || elegido.canceled || !elegido.path) return;
+
+  el("agenda-resultado").textContent = "Leyendo…";
+  try {
+    const r = await postJson("/api/whatsapp/agenda/importar", { path: elegido.path });
+    el("agenda-resultado").textContent =
+      `Importados ${formatNumero(r.contactos_con_nombre)} contactos con nombre ` +
+      `(${formatNumero(r.numeros_indexados)} números). Recargando…`;
+    await estadoAgenda();
+    carga();
+  } catch (err) {
+    el("agenda-resultado").textContent = err.message;
+  }
+});
+
+el("agenda-olvidar").addEventListener("click", async () => {
+  await postJson("/api/whatsapp/agenda/olvidar", {}).catch(() => null);
+  el("agenda-resultado").textContent = "Agenda olvidada.";
+  await estadoAgenda();
+  carga();
+});
+
 (async () => {
-  if (await compruebaBase()) { cargaExplicacion(); carga(); }
+  if (await compruebaBase()) { estadoAgenda(); cargaExplicacion(); carga(); }
 })();
