@@ -30,6 +30,32 @@ from .config import AGENDA, DESCIFRADA
 
 # Qué es cada `message.message_type`, deducido cruzando con `message_media.mime_type`
 # sobre una base real. No están documentados en ninguna parte oficial.
+# Qué dice cada aviso del sistema (`message_system.action_type`). **Deducido cruzando
+# los tipos con las tablas `message_system_*` de esta misma base**, no de documentación:
+# WhatsApp no publica estos códigos. Los que no se han podido identificar se enseñan con
+# su número, que es más honesto que inventarles un texto — y deja la pista para quien
+# quiera averiguarlo.
+#
+# El 67 se lleva 7.265 de los 13.902 avisos: es el «cifrado de extremo a extremo» que
+# WhatsApp escribe al abrir cualquier conversación.
+AVISOS = {
+    1:   "Cambió el nombre del grupo",
+    5:   "Se creó el grupo",
+    6:   "Cambió la foto del grupo",
+    10:  "Cambió su número de teléfono",
+    12:  "Alguien salió del grupo",
+    14:  "Alguien entró en el grupo",
+    20:  "Se añadió a alguien al grupo",
+    28:  "Cambió su número de teléfono",
+    46:  "Cambió la descripción del grupo",
+    50:  "Cambiaron los ajustes del grupo",
+    58:  "Contacto bloqueado o desbloqueado",
+    67:  "Los mensajes están cifrados de extremo a extremo",
+    69:  "Esta cuenta pasó a ser de empresa",
+    70:  "Llamada de grupo",
+    165: "Cambió su nombre de usuario",
+}
+
 TIPOS = {
     0: "texto",
     1: "imagen",
@@ -439,8 +465,10 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
                    mm.file_path, mm.file_size, mm.mime_type, mm.media_caption,
                    mm.media_duration, mm.width, mm.height, mm.media_name,
                    rv.revoke_timestamp,
+                   sys.action_type AS aviso,
                    q.text_data AS citado_texto, q.message_type AS citado_tipo
               FROM message m
+              LEFT JOIN message_system sys ON sys.message_row_id = m._id
               LEFT JOIN jid s            ON s._id = m.sender_jid_row_id
               LEFT JOIN message_media mm ON mm.message_row_id = m._id
               LEFT JOIN message_revoked rv ON rv.message_row_id = m._id
@@ -462,7 +490,11 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
                 "fecha": f["timestamp"],
                 "tipo": "eliminado" if eliminado else tipo,
                 "tipo_real": tipo,
-                "texto": f["text_data"],
+                # Los avisos vienen con `text_data` vacío: lo que dicen está en su
+                # código, no en el propio mensaje.
+                "texto": f["text_data"] or (
+                    AVISOS.get(f["aviso"], f"Aviso del sistema (tipo {f['aviso']})")
+                    if f["aviso"] is not None else None),
                 "destacado": bool(f["starred"]),
                 "autor": (_bonito(f["autor_raw"], f["autor_user"], f["autor_server"],
                                   nombres, lids)
