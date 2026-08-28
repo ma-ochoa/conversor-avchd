@@ -50,7 +50,23 @@ el("wa-sync").addEventListener("click", async () => {
     sondeaSync(job_id);
   } catch (err) {
     el("wa-sync-estado").textContent = err.message;
-    el("wa-sync").disabled = false;
+    el("wa-sync").disabled = el("wa-sync-db").disabled = false;
+  }
+});
+
+// Saltarse los medios cambia una sincronización de varios minutos a una de segundos: el
+// grueso del tiempo se va en inventariar las 9 carpetas del móvil por USB, no en la base.
+el("wa-sync-db").addEventListener("click", async () => {
+  el("wa-sync").disabled = el("wa-sync-db").disabled = true;
+  el("wa-sync-estado").textContent = "Trayendo solo la base de datos…";
+  el("wa-progreso").classList.remove("hidden");
+  el("wa-avisos").innerHTML = "";
+  try {
+    const { job_id } = await postJson("/api/whatsapp/sync", { con_medios: false });
+    sondeaSync(job_id);
+  } catch (err) {
+    el("wa-sync-estado").textContent = err.message;
+    el("wa-sync").disabled = el("wa-sync-db").disabled = false;
   }
 });
 
@@ -71,7 +87,7 @@ async function sondeaSync(jobId) {
     job = await api(`/api/whatsapp/sync/${jobId}`);
   } catch (err) {
     el("wa-sync-estado").textContent = err.message;
-    el("wa-sync").disabled = false;
+    el("wa-sync").disabled = el("wa-sync-db").disabled = false;
     return;
   }
 
@@ -121,7 +137,7 @@ async function sondeaSync(jobId) {
       li.textContent = e;
       el("wa-avisos").appendChild(li);
     }
-    el("wa-sync").disabled = false;
+    el("wa-sync").disabled = el("wa-sync-db").disabled = false;
     cargaEstado();
     return;
   }
@@ -130,9 +146,14 @@ async function sondeaSync(jobId) {
 
 // ---------------------------------------------------------------- descifrar
 
+let claveGuardada = false;
+
 el("wa-descifrar").addEventListener("click", async () => {
   const campo = el("wa-clave");
-  if (!campo.value.trim()) {
+  // Con una clave ya guardada no hace falta teclear nada: el campo vacío significa
+  // «usa la que tienes», que es el caso normal a partir de la segunda vez.
+  const usarGuardada = !campo.value.trim() && claveGuardada;
+  if (!campo.value.trim() && !usarGuardada) {
     el("wa-descifrar-estado").textContent = "Falta la clave.";
     return;
   }
@@ -140,7 +161,9 @@ el("wa-descifrar").addEventListener("click", async () => {
     "Descifrando y preparando índices… (la primera vez tarda cerca de un minuto)";
   el("wa-descifrar").disabled = true;
   try {
-    const data = await postJson("/api/whatsapp/decrypt", { key: campo.value });
+    const data = await postJson("/api/whatsapp/decrypt", usarGuardada
+      ? { use_saved: true }
+      : { key: campo.value, remember: el("wa-recordar").checked });
     campo.value = "";                    // fuera en cuanto deja de hacer falta
     const r = data.resumen;
     el("wa-db-info").textContent =
@@ -149,6 +172,26 @@ el("wa-descifrar").addEventListener("click", async () => {
       (data.resultado.agenda ? "Agenda de contactos incluida." : "Sin agenda: se verán números.");
     el("wa-resumen-db").classList.remove("hidden");
     el("wa-descifrar-estado").textContent = "Listo.";
+    // Se dice qué trae la `wa.db` de esta copia: es la única forma de enterarse de que
+    // WhatsApp ha vuelto a rellenar sus contactos, si algún día lo hace.
+    const c = data.contactos_wa_db;
+    if (c) {
+      el("wa-descifrar-estado").textContent += c.con_nombre
+        ? ` La copia trae ${formatNumero(c.con_nombre)} contactos con nombre.`
+        : " La copia sigue sin traer contactos (wa_contacts vacía): los nombres salen de la agenda importada.";
+    }
+    if (data.clave_guardada && !String(data.clave_guardada).startsWith("error")) {
+      claveGuardada = true;
+    }
+    const arch = data.archivo;
+    if (arch && !arch.error) {
+      el("wa-descifrar-estado").textContent += arch.primera_vez
+        ? ` Archivo histórico creado con ${formatNumero(arch.mensajes)} mensajes.`
+        : ` Archivo: +${formatNumero(arch.insertados?.message || 0)} mensajes nuevos,` +
+          ` ${formatNumero(arch.mensajes_idos)} ya no están en el móvil.`;
+    } else if (arch?.error) {
+      el("wa-descifrar-estado").textContent += ` (el archivo histórico falló: ${arch.error})`;
+    }
     if (data.indices && !data.indices.completo) {
       el("wa-descifrar-estado").textContent +=
         ` Aviso: ${data.indices.fallidos.length} índice(s) no se pudieron crear; las consultas irán lentas.`;
@@ -197,6 +240,20 @@ async function cargaEstado() {
       `${formatNumero(cfg.db.medios)} archivos y ${formatNumero(cfg.db.eliminados)} eliminados.`;
     el("wa-resumen-db").classList.remove("hidden");
   }
+  pintaArchivo(s.archivo);
+
+  // Una copia descargada más nueva que la descifrada = solo falta la clave.
+  const pendiente = s.encrypted.present &&
+    (!s.decrypted.present || s.decrypted.modified < s.encrypted.modified);
+  const aviso = el("wa-pendiente");
+  aviso.classList.toggle("hidden", !pendiente);
+  if (pendiente) {
+    aviso.textContent = `Hay una copia descargada del ${s.encrypted.modified.replace("T", " ")}` +
+      ` (${formatBytes(s.encrypted.size)}) sin descifrar. ` +
+      (claveGuardada ? "Pulsa «Descifrar»: la clave ya está guardada."
+                     : "Solo falta introducir la clave.");
+  }
+
   if (!s.tool_installed) {
     el("wa-descifrar").disabled = true;
     el("wa-descifrar-estado").textContent =
@@ -204,4 +261,49 @@ async function cargaEstado() {
   }
 }
 
-cargaEstado();
+function pintaArchivo(a) {
+  const cuerpo = document.querySelector("#wa-archivo tbody");
+  el("wa-archivo-vacio").classList.toggle("hidden", !!(a && a.existe));
+  if (!a || !a.existe) { cuerpo.innerHTML = ""; return; }
+  if (a.error) {
+    cuerpo.innerHTML = `<tr><td>Archivo</td><td>${esc(a.error)}</td></tr>`;
+    return;
+  }
+  const filas = [
+    ["Mensajes guardados", formatNumero(a.mensajes)],
+    ["Conversaciones", formatNumero(a.chats)],
+    // Lo que da sentido a todo esto: lo que ya no está en el teléfono y sigue aquí.
+    ["Ya no están en el móvil",
+      `${formatNumero(a.mensajes_idos)} mensajes · ${formatNumero(a.chats_idos)} conversaciones`],
+    ["Última fusión", a.ultima_fusion ? a.ultima_fusion.replace("T", " ").slice(0, 19) : "—"],
+    ["Tamaño", formatBytes(a.bytes)],
+  ];
+  cuerpo.innerHTML = filas
+    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
+}
+
+async function estadoClave() {
+  const k = await api("/api/whatsapp/clave").catch(() => null);
+  if (!k) return;
+  claveGuardada = k.guardada;
+  el("wa-recordar").checked = k.guardada;
+  el("wa-clave-estado").textContent = k.guardada
+    ? (k.donde === "llavero"
+        ? "Clave guardada, cifrada y con su maestra en el llavero del sistema. Deja el campo vacío y pulsa Descifrar."
+        : "Clave guardada y cifrada, pero la maestra está en un fichero junto a ella: este equipo no tiene llavero disponible, así que quien acceda a la carpeta puede descifrarla.")
+    : "No hay ninguna clave guardada.";
+  el("wa-clave").placeholder = k.guardada
+    ? "Guardada — déjalo vacío para usarla"
+    : "Pega aquí los 64 dígitos (los espacios dan igual)";
+}
+
+// Desmarcar es una orden inmediata de borrar: no tiene sentido esperar al próximo
+// descifrado para dejar de guardar algo que el usuario acaba de decir que no quiere.
+el("wa-recordar").addEventListener("change", async (ev) => {
+  if (!ev.target.checked && claveGuardada) {
+    await fetch("/api/whatsapp/clave", { method: "DELETE" }).catch(() => null);
+    await estadoClave();
+  }
+});
+
+estadoClave().then(cargaEstado);

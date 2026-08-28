@@ -15,3 +15,12 @@ paramiko>=3.4
 # Necesita antes la librería del sistema:  brew install libgphoto2
 # Es opcional: sin ella, el resto de la app funciona igual y el móvil solo se detecta.
 gphoto2>=2.5
+
+# Guardar la clave de 64 dígitos sin dejarla en claro (sección WhatsApp).
+#   cryptography -> el cifrado Fernet del fichero de la clave
+#   keyring      -> la clave maestra en el llavero del sistema (Keychain en macOS,
+#                   Credential Manager en Windows, Secret Service en Linux).
+# Sin keyring la aplicación funciona igual: la maestra cae a un fichero junto al cifrado,
+# que protege menos y la interfaz lo dice.
+cryptography>=42.0
+keyring>=25.0

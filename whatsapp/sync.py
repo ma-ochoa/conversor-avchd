@@ -269,6 +269,8 @@ def estado() -> dict:
     info["medios_copiados"] = len(lista)
     info["ultima_sync"] = (history.runs(1) or [{}])[0].get("finished_at")
     info["agenda_cifrada"] = AGENDA_CIFRADA.is_file()
+    from . import archivo
+    info["archivo"] = archivo.estado()
     try:
         info["indices_listos"] = chats.indices_listos()
     except Exception:

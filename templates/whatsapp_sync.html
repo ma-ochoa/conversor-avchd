@@ -19,7 +19,11 @@
 
   <div class="paso">
     <button id="wa-sync" class="primary">Sincronizar ahora</button>
+    <button id="wa-sync-db">Solo la base de datos</button>
     <span id="wa-sync-estado" class="status-text"></span>
+    <p class="hint">«Solo la base de datos» se salta el inventario de las 9 carpetas de
+    medios, que en un móvil con años de uso son decenas de miles de ficheros y varios
+    minutos. Trae la copia y la agenda, que es lo que hace falta para leer conversaciones.</p>
   </div>
 
   <div id="wa-progreso" class="hidden block">
@@ -33,7 +37,10 @@
 <section>
   <h2>Descifrar la base de datos</h2>
   <p class="muted">La clave hace falta en cada sincronización, porque la copia que se trae
-  del móvil viene cifrada. <strong>No se guarda</strong>.</p>
+  del móvil viene cifrada. Puedes pedir que se recuerde: se guarda cifrada, con su clave
+  maestra en el llavero del sistema, y nunca vuelve al navegador.</p>
+
+  <p id="wa-pendiente" class="hidden aviso"></p>
 
   <details id="wa-instrucciones">
     <summary>Cómo preparar el móvil (leer antes de la primera vez)</summary>
@@ -78,8 +85,10 @@
              placeholder="Pega aquí los 64 dígitos (los espacios dan igual)">
       <button id="wa-descifrar" class="primary">Descifrar</button>
     </div>
-    <p class="hint">Se usa y se descarta: no queda en la configuración, ni en ningún registro,
-    ni vuelve al navegador. El campo se vacía solo al terminar.</p>
+    <label><input type="checkbox" id="wa-recordar"> Recordar la clave en este equipo</label>
+    <p class="hint">Sin recordarla, se usa y se descarta: no queda en la configuración, ni en
+    ningún registro, ni vuelve al navegador. El campo se vacía solo al terminar.</p>
+    <p id="wa-clave-estado" class="muted"></p>
     <p id="wa-descifrar-estado" class="status-text"></p>
   </div>
 
@@ -88,6 +97,17 @@
     <p id="wa-db-info" class="muted"></p>
     <p><a href="/whatsapp/chats">Ver las conversaciones →</a></p>
   </div>
+</section>
+
+<section>
+  <h2>Archivo histórico</h2>
+  <p class="muted">La copia del ordenador <strong>no es un espejo del móvil</strong>. Cada
+  copia que se descifra se suma a un archivo que solo crece: si borras una conversación en
+  el teléfono para hacer sitio, aquí se queda, marcada con la fecha en que dejó de estar
+  allí. Nunca se elimina nada.</p>
+  <table id="wa-archivo" class="compacta"><tbody></tbody></table>
+  <p id="wa-archivo-vacio" class="hint hidden">Todavía no hay archivo: se crea solo la
+  primera vez que descifres una copia.</p>
 </section>
 
 <section>

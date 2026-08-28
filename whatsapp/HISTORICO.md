@@ -1,8 +1,8 @@
 # Fusión acumulativa — fase 2
 
-> **Estado: diseñado, no implementado.** Lo de la fase 1 (ya hecho) es lo que hace falta
-> para que esto se pueda escribir: conservar la generación anterior y dejar instantáneas.
-> La fusión en sí espera a verificar cómo queda la base al borrar cosas en el móvil.
+> **Estado: implementado en `archivo.py`.** Se fusiona sola tras cada descifrado. Lo que
+> sigue describe el diseño; al final, en «Lo que cambió al escribirlo», está lo que se
+> demostró falso al llevarlo a la práctica — que no es poco.
 
 ## El problema
 
@@ -135,3 +135,64 @@ de lo supuesto. Y el archivo es justamente lo que no se puede perder: es la úni
 lo que ya no está en el móvil.
 
 Mientras tanto, **no se destruye nada**, que es la parte que sí importa tener hoy.
+
+
+---
+
+# Lo que cambió al escribirlo
+
+El diseño de arriba se escribió sin probarlo. Al implementarlo, tres cosas resultaron
+distintas, y las tres se descubrieron ejecutando, no razonando.
+
+## 1. `key_id` NO es único
+
+Arriba dice «Único global». No lo es: en la base de prueba, **12 de sus 611.637 mensajes
+comparten `key_id`** con otro. Son mensajes enviados a varias conversaciones a la vez
+—encuestas y difusiones—, y cada copia lleva el mismo identificador.
+
+Con `key_id` como llave, el mapa de equivalencias reventaba por clave duplicada. La llave
+real es la pareja **(`key_id`, `chat_row_id`)**: cada copia del mensaje en su conversación
+es una fila distinta, que es lo que de verdad son.
+
+## 2. Hay mensajes sin conversación
+
+**503 filas de `message` apuntan a un `chat_row_id` que no existe.** Vienen así del móvil,
+no las produce la copia. Al fusionar no tienen dónde ir, y con un `JOIN` normal tumbaban
+la inserción por `NOT NULL`.
+
+Se descartan al insertar y se cuentan (`mensajes_sin_conversacion`). Y hay un efecto
+secundario que costó ver: como no entran en el mapa, el sellado no los alcanzaba y salían
+marcados como desaparecidos del móvil **sin haberse ido** — 503 falsos positivos frente a
+449 bajas reales. Se sellan aparte, por `key_id`, que para ellos es lo único que hay.
+
+## 3. Faltaba media base
+
+El diseño enumeraba seis tablas. La base tiene **más de veinte tablas que cuelgan de
+`message`** —reacciones, menciones, miniaturas incrustadas, ubicaciones, vCards, enlaces,
+llamadas, acuses de recibo…— con **498.387 filas de contenido** que se habrían quedado
+fuera. Se descubrieron leyendo documentación forense externa (ver
+`documentacion/whatsapp/`), no mirando el código.
+
+Ahora no se enumeran: se detectan solas por tener una columna `message_row_id`. Así la
+fusión sigue funcionando cuando WhatsApp añada tablas en la próxima versión.
+
+## Y una lección de rendimiento
+
+La primera fusión completa tardó **482 segundos**. El 94 % se iba en un solo paso: buscar
+cada uno de los 120.011 `jid` por `raw_string` **sin índice**, o sea 120.011 barridos
+completos de la tabla. WhatsApp no lo trae porque su `jid` se consulta por `_id`.
+
+Un `CREATE INDEX` lo dejó en **25 segundos**. Por eso `fusiona()` devuelve el tiempo de
+cada paso: sin medir por fases se habría optimizado lo que no era.
+
+## Cómo se comprobó
+
+Sin tocar el móvil: se copió la base, se le borró una conversación entera (399 mensajes),
+50 mensajes sueltos de otra y se le añadieron 3 nuevos. Fusionada contra el archivo, el
+resultado fue exactamente el esperado — 3 insertados, 1 conversación y 449 mensajes
+marcados como idos.
+
+Y a la inversa, que es la prueba que de verdad importa: partiendo de un archivo al que le
+faltaba todo eso, fusionar la base completa **recuperó los 449 mensajes, la conversación y
+todas sus filas hijas** (1.057 acuses, 27 medios, 13 citados, 4 miniaturas, menciones,
+encuestas, enlaces…). Nada se quedó por el camino.

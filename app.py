@@ -76,8 +76,9 @@ from importer.plan import build_plan, free_space
 from importer.sources import describe_source, detect_sources
 from importer.thumbs import get_phone_thumbnail, get_thumbnail
 import whatsapp as wa
-from whatsapp import (agenda as wa_agenda, backup as wa_backup,
-                      chats as wa_chats,
+from whatsapp import (agenda as wa_agenda, archivo as wa_archivo,
+                      backup as wa_backup,
+                      chats as wa_chats, claves as wa_claves,
                       galeria as wa_galeria, jobs as wa_jobs,
                       media as wa_media, miniaturas as wa_miniaturas,
                       sync as wa_sync)
@@ -947,26 +948,66 @@ def whatsapp_backups():
 
 @app.route("/api/whatsapp/decrypt", methods=["POST"])
 def whatsapp_decrypt():
-    """La clave llega por POST, se usa y se descarta.
+    """La clave llega por POST, o sale de la guardada si el usuario pidió recordarla.
 
-    **No se guarda en ningún sitio**: ni en la configuración, ni en un registro, ni
-    vuelve al navegador. Flask no escribe los cuerpos de las peticiones en su log.
+    **Nunca vuelve al navegador**, se guarde o no. Flask no escribe los cuerpos de las
+    peticiones en su log, y guardarla es cosa de `claves.py`: cifrada, con la maestra en
+    el llavero del sistema.
     """
-    clave = (request.get_json(silent=True) or {}).get("key", "")
+    datos = request.get_json(silent=True) or {}
+    clave = datos.get("key", "")
+    if not clave and datos.get("use_saved"):
+        clave = wa_claves.recupera() or ""
+        if not clave:
+            return jsonify({"error": "No hay ninguna clave guardada que usar."}), 400
     try:
         resultado = wa_backup.descifra_todo(clave)
         # Los índices se crean aquí y no la primera vez que alguien abre los chats: son
         # ~45 s sobre una base de 600.000 mensajes, y pagarlos en mitad de una consulta
         # daría la sensación de que la aplicación se ha colgado.
         indices = wa_chats.prepara()
+        # Solo se guarda una clave que acaba de funcionar: guardarla antes de probarla
+        # dejaría una clave equivocada recordada y fallando en cada sincronización.
+        guardada = None
+        if datos.get("remember"):
+            try:
+                guardada = wa_claves.guarda(wa_backup.normaliza_clave(clave))
+            except Exception as exc:
+                guardada = f"error: {exc}"
+        # La copia recién descifrada se suma al archivo histórico. Va aquí y no en un
+        # botón aparte porque es lo que hace que borrar algo en el móvil no lo borre del
+        # ordenador: si se pudiera olvidar, se olvidaría justo la vez que hiciera falta.
+        try:
+            fusion = wa_archivo.fusiona()
+        except Exception as exc:
+            fusion = {"error": str(exc)}
         return jsonify({"ok": True, "resultado": resultado, "indices": indices,
-                        "resumen": wa_chats.resumen_chats()})
+                        "resumen": wa_chats.resumen_chats(), "clave_guardada": guardada,
+                        "contactos_wa_db": wa_chats.contactos_en_wa_db(),
+                        "archivo": fusion})
     except wa_backup.ClaveInvalida as exc:
         return jsonify({"error": str(exc), "bad_key": True}), 400
     except wa_backup.BackupError as exc:
         return _wa_error(exc)
     finally:
         del clave
+
+
+@app.route("/api/whatsapp/historico")
+def whatsapp_historico():
+    """Qué guarda el archivo histórico y cuánto de ello ya no está en el móvil.
+
+    No se llama `/archivo` porque esa ruta ya sirve los ficheros de medios copiados.
+    """
+    return jsonify(wa_archivo.estado())
+
+
+@app.route("/api/whatsapp/clave", methods=["GET", "DELETE"])
+def whatsapp_clave():
+    """Si hay clave guardada y dónde está su maestra. **Nunca devuelve la clave.**"""
+    if request.method == "DELETE":
+        return jsonify({"olvidada": wa_claves.olvida()})
+    return jsonify({"guardada": wa_claves.hay_clave(), "donde": wa_claves.donde_esta()})
 
 
 # ------------------------------------------------------------ visor de conversaciones

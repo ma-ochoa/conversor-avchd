@@ -255,6 +255,35 @@ def _nombres(con: sqlite3.Connection) -> dict[str, str]:
     return nombres
 
 
+def contactos_en_wa_db() -> dict:
+    """Cuántos nombres trae la `wa.db` recién descifrada.
+
+    Es la comprobación que hay que hacer tras cada copia nueva: WhatsApp dejó de rellenar
+    `wa_contacts` —lee la agenda del sistema al vuelo— y si algún día volviera a hacerlo,
+    esta es la fuente de nombres buena, la que trae también los de quien no está en tu
+    agenda. Hasta entonces, la respuesta es cero y la agenda importada es lo único que hay.
+    """
+    con = _con()
+    try:
+        if not _tiene_agenda(con):
+            return {"disponible": False, "con_nombre": 0, "filas": 0}
+        columnas = {r["name"] for r in con.execute("PRAGMA agenda.table_info(wa_contacts)")}
+        filas = con.execute("SELECT COUNT(*) AS n FROM agenda.wa_contacts").fetchone()["n"]
+        prefiere = [c for c in ("display_name", "wa_name", "given_name", "nickname")
+                    if c in columnas]
+        con_nombre = 0
+        if prefiere and filas:
+            expr = " OR ".join(f"NULLIF({c}, '') IS NOT NULL" for c in prefiere)
+            con_nombre = con.execute(
+                f"SELECT COUNT(*) AS n FROM agenda.wa_contacts WHERE {expr}").fetchone()["n"]
+        return {"disponible": True, "filas": filas, "con_nombre": con_nombre,
+                "columnas": sorted(prefiere)}
+    except sqlite3.Error as exc:
+        return {"disponible": False, "con_nombre": 0, "filas": 0, "detalle": str(exc)}
+    finally:
+        con.close()
+
+
 def _bonito(raw: str | None, user: str | None, server: str | None,
             nombres: dict[str, str], lids: dict[str, str] | None = None) -> str:
     """Cómo llamar a alguien: nombre de la agenda, y si no, su número.
