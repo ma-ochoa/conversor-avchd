@@ -1111,6 +1111,15 @@ def whatsapp_mensajes(chat_id):
     return jsonify(datos)
 
 
+@app.route("/api/whatsapp/chat/<int:chat_id>/miembros")
+def whatsapp_miembros(chat_id):
+    """Quién está en un grupo, y quién estuvo y ya no."""
+    try:
+        return jsonify(wa_chats.miembros(chat_id))
+    except wa_chats.SinBaseDeDatos as exc:
+        return _wa_error(exc, 404)
+
+
 @app.route("/api/whatsapp/chat/<int:chat_id>/contexto")
 def whatsapp_contexto(chat_id):
     """Salto desde una foto a su punto exacto de la conversación."""

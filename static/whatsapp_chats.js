@@ -111,6 +111,55 @@ function pintaChats(chats) {
 
 el("busca-chat").addEventListener("input", aplicaFiltros);
 
+// ------------------------------------------------------------ miembros del grupo
+//
+// Están en la base y hasta ahora no se enseñaban en ninguna parte. Se piden solo al
+// pulsar: un grupo grande tiene cientos de miembros y no hay por qué traerlos al abrir
+// cada conversación.
+
+let miembrosDe = null;          // de qué chat es lo que hay pintado
+
+function preparaMiembros(esGrupo, chatId) {
+    const boton = el("ver-miembros");
+    boton.classList.toggle("hidden", !esGrupo);
+    el("panel-miembros").classList.add("hidden");
+    miembrosDe = null;
+    boton.textContent = "ver miembros";
+    boton.dataset.chat = chatId;
+}
+
+el("ver-miembros").addEventListener("click", async () => {
+  const panel = el("panel-miembros");
+  const chatId = parseInt(el("ver-miembros").dataset.chat, 10);
+  if (miembrosDe === chatId) {                 // segundo clic: se cierra
+    panel.classList.toggle("hidden");
+    el("ver-miembros").textContent = panel.classList.contains("hidden")
+      ? "ver miembros" : "ocultar miembros";
+    return;
+  }
+  panel.classList.remove("hidden");
+  panel.innerHTML = '<p class="muted">Buscando…</p>';
+  try {
+    const d = await api(`/api/whatsapp/chat/${chatId}/miembros`);
+    miembrosDe = chatId;
+    el("ver-miembros").textContent = "ocultar miembros";
+    const fila = (m) => `<li>
+        <span class="miembro-nombre">${esc(m.nombre)}</span>
+        ${m.rango && m.rango !== "miembro"
+            ? `<span class="miembro-rango">${esc(m.rango)}</span>` : ""}
+        ${m.numero ? `<span class="muted">+${esc(m.numero)}</span>` : ""}
+      </li>`;
+    panel.innerHTML = `
+      <p class="muted">${formatNumero(d.miembros.length)} miembros</p>
+      <ul class="lista-miembros">${d.miembros.map(fila).join("")}</ul>
+      ${d.antiguos.length ? `
+        <p class="muted">${formatNumero(d.antiguos.length)} que ya no están</p>
+        <ul class="lista-miembros idos">${d.antiguos.map(fila).join("")}</ul>` : ""}`;
+  } catch (err) {
+    panel.innerHTML = `<p class="muted">${esc(err.message)}</p>`;
+  }
+});
+
 // ----------------------------------------------------------------- el hilo
 
 async function abreChat(id) {
@@ -133,6 +182,7 @@ async function abreChat(id) {
   el("chat-nombre").textContent = datos.chat.nombre;
   el("chat-datos").textContent =
     `${formatNumero(info.mensajes)} mensajes · ${formatNumero(info.medios)} archivos`;
+  preparaMiembros(datos.chat.es_grupo, id);
 
   el("hilo").innerHTML = "";
   añadeMensajes(datos.mensajes, false);
@@ -353,6 +403,7 @@ async function abreEnMensaje(chatId, mensajeId) {
   el("chat-nombre").textContent = datos.chat.nombre;
   el("chat-datos").textContent =
     `${formatNumero(info.mensajes)} mensajes · ${formatNumero(info.medios)} archivos`;
+  preparaMiembros(datos.chat.es_grupo, chatId);
 
   el("hilo").innerHTML = "";
   añadeMensajes(datos.mensajes, false);

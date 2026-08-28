@@ -51,6 +51,10 @@ AVISOS = {
     # tu código de seguridad con…» que WhatsApp escribe cuando alguien reinstala o
     # cambia de teléfono. Con sus 2.265 casos es el segundo aviso más frecuente.
     18:  "Cambió el código de seguridad",
+    # También identificado en la aplicación. Encaja con el rastro: los 12 casos están
+    # todos en grupos y aparecen a la vez en `message_system_group` y en
+    # `message_system_chat_participant`, que es lo propio de un cambio de administrador.
+    15:  "Ahora eres administrador del grupo",
     20:  "Se añadió a alguien al grupo",
     28:  "Cambió su número de teléfono",
     46:  "Cambió la descripción del grupo",
@@ -60,6 +64,18 @@ AVISOS = {
     69:  "Esta cuenta pasó a ser de empresa",
     70:  "Llamada de grupo",
     165: "Cambió su nombre de usuario",
+}
+
+# Los avisos sobre un participante sí dicen a quién afectan: el jid está en
+# `message_system_chat_participant`, y lo traen **todos** (819 + 753 + 165 + …). Sin
+# resolverlo, «alguien salió del grupo» repetido cientos de veces no informa de nada.
+AVISOS_CON_QUIEN = {
+    2:   "{} cambió en el grupo",
+    12:  "{} salió del grupo",
+    14:  "{} entró en el grupo",
+    15:  "{} es ahora administrador del grupo",
+    20:  "Se añadió a {} al grupo",
+    79:  "{} cambió en el grupo",
 }
 
 TIPOS = {
@@ -334,6 +350,10 @@ def _bonito(raw: str | None, user: str | None, server: str | None,
         return f"+{telefono}" if telefono else "Contacto sin identificar"
     if server == "newsletter":
         return "Canal"
+    # WhatsApp se guarda a sí mismo con servidores propios (`lid_me`, `status_me`). Sin
+    # esto, el creador de tus propios grupos aparecía como «lid_me».
+    if server and server.endswith("_me"):
+        return "Tú"
     if user and user.isdigit():
         return f"+{user}"
     # Sin nada que enseñar se devuelve vacío, no "?": un interrogante en mitad de una
@@ -472,9 +492,14 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
                    mm.media_duration, mm.width, mm.height, mm.media_name,
                    rv.revoke_timestamp,
                    sys.action_type AS aviso,
+                   pj.raw_string AS aviso_raw, pj.user AS aviso_user,
+                   pj.server AS aviso_server,
                    q.text_data AS citado_texto, q.message_type AS citado_tipo
               FROM message m
               LEFT JOIN message_system sys ON sys.message_row_id = m._id
+              LEFT JOIN message_system_chat_participant sp
+                     ON sp.message_row_id = m._id
+              LEFT JOIN jid pj ON pj._id = sp.user_jid_row_id
               LEFT JOIN jid s            ON s._id = m.sender_jid_row_id
               LEFT JOIN message_media mm ON mm.message_row_id = m._id
               LEFT JOIN message_revoked rv ON rv.message_row_id = m._id
@@ -498,9 +523,7 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
                 "tipo_real": tipo,
                 # Los avisos vienen con `text_data` vacío: lo que dicen está en su
                 # código, no en el propio mensaje.
-                "texto": f["text_data"] or (
-                    AVISOS.get(f["aviso"], f"Aviso del sistema (tipo {f['aviso']})")
-                    if f["aviso"] is not None else None),
+                "texto": f["text_data"] or _texto_aviso(f, nombres, lids),
                 "destacado": bool(f["starred"]),
                 "autor": (_bonito(f["autor_raw"], f["autor_user"], f["autor_server"],
                                   nombres, lids)
@@ -540,6 +563,79 @@ def mensajes(chat_id: int, antes_de: int | None = None, limit: int = 60) -> dict
         }
     finally:
         con.close()
+
+
+def miembros(chat_id: int) -> dict:
+    """Quién está en un grupo, y quién estuvo y ya no.
+
+    **`group_participant_user.group_jid_row_id` es un `jid`, no un chat.** Cruzarlo
+    directamente contra `chat._id` da resultados que parecen buenos y no lo son: los
+    números salen, pero pertenecen a otro grupo.
+
+    `rank` es 0 para un miembro corriente, 1 para administrador y 2 para quien creó el
+    grupo. `group_past_participant_user` guarda a los que ya no están, y distingue con
+    `is_leave` si se fueron por su cuenta o si los echaron.
+    """
+    con = _con()
+    try:
+        cabecera = con.execute(
+            "SELECT c.jid_row_id, c.subject, j.server FROM chat c "
+            "JOIN jid j ON j._id = c.jid_row_id WHERE c._id = ?", (chat_id,)).fetchone()
+        if not cabecera:
+            raise SinBaseDeDatos("Esa conversación no existe.")
+        if cabecera["server"] != "g.us":
+            return {"es_grupo": False, "miembros": [], "antiguos": []}
+
+        nombres = _nombres(con)
+        lids = _telefonos_de_lid(con)
+        jid_grupo = cabecera["jid_row_id"]
+
+        RANGOS = {0: "miembro", 1: "administrador", 2: "creador"}
+        gente = []
+        for f in con.execute("""
+                SELECT g.rank, g.add_timestamp, j.raw_string, j.user, j.server
+                  FROM group_participant_user g
+                  JOIN jid j ON j._id = g.user_jid_row_id
+                 WHERE g.group_jid_row_id = ?""", (jid_grupo,)):
+            gente.append({
+                "nombre": _bonito(f["raw_string"], f["user"], f["server"], nombres, lids),
+                "numero": telefono_de(f["raw_string"], f["user"], f["server"], lids),
+                "rango": RANGOS.get(f["rank"], "miembro"),
+                "desde": f["add_timestamp"] or None,
+            })
+
+        antiguos = []
+        for f in con.execute("""
+                SELECT p.is_leave, p.timestamp, j.raw_string, j.user, j.server
+                  FROM group_past_participant_user p
+                  JOIN jid j ON j._id = p.user_jid_row_id
+                 WHERE p.group_jid_row_id = ?""", (jid_grupo,)):
+            antiguos.append({
+                "nombre": _bonito(f["raw_string"], f["user"], f["server"], nombres, lids),
+                "numero": telefono_de(f["raw_string"], f["user"], f["server"], lids),
+                "se_fue": bool(f["is_leave"]),
+                "cuando": f["timestamp"] or None,
+            })
+
+        orden = {"creador": 0, "administrador": 1, "miembro": 2}
+        gente.sort(key=lambda p: (orden[p["rango"]], p["nombre"].lower()))
+        antiguos.sort(key=lambda p: p["nombre"].lower())
+        return {"es_grupo": True, "nombre": cabecera["subject"],
+                "miembros": gente, "antiguos": antiguos}
+    finally:
+        con.close()
+
+
+def _texto_aviso(f, nombres: dict, lids: dict) -> str | None:
+    """Qué dice un aviso del sistema, con el nombre de a quién afecta si lo lleva."""
+    if f["aviso"] is None:
+        return None
+    plantilla = AVISOS_CON_QUIEN.get(f["aviso"])
+    if plantilla and f["aviso_raw"]:
+        quien = _bonito(f["aviso_raw"], f["aviso_user"], f["aviso_server"], nombres, lids)
+        if quien:
+            return plantilla.format(quien)
+    return AVISOS.get(f["aviso"], f"Aviso del sistema (tipo {f['aviso']})")
 
 
 def contexto(chat_id: int, mensaje_id: int, alrededor: int = 25) -> dict:

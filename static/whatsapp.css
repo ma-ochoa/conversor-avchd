@@ -309,3 +309,22 @@ img.chat-avatar { object-fit: cover; background: var(--border); }
   display: block; margin: 0 0.75rem 0.5rem; font-size: 0.76rem; color: var(--muted);
   cursor: pointer;
 }
+
+/* Miembros de un grupo: se despliegan sobre el hilo, sin tapar la cabecera. */
+.panel-miembros {
+  flex: none; max-height: 45%; overflow-y: auto;
+  background: var(--wa-panel); border-bottom: 1px solid var(--border);
+  padding: 0.6rem 0.9rem;
+}
+.panel-miembros > .muted { margin: 0.3rem 0 0.2rem; font-size: 0.78rem; }
+.lista-miembros { list-style: none; margin: 0; padding: 0; font-size: 0.85rem; }
+.lista-miembros li {
+  display: flex; gap: 0.5rem; align-items: baseline; padding: 0.16rem 0;
+}
+.lista-miembros.idos { opacity: 0.65; }
+.miembro-nombre { font-weight: 500; }
+.miembro-rango {
+  font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--accent); border: 1px solid var(--accent); border-radius: 4px;
+  padding: 0 0.28rem;
+}
