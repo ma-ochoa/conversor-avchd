@@ -284,3 +284,11 @@ video.redonda { border-radius: 50%; aspect-ratio: 1; object-fit: cover; max-widt
 .desglose > td { background: var(--wa-panel); }
 .desglose-lista { list-style: none; margin: 0.3rem 0 0; padding: 0; font-size: 0.85rem; }
 .desglose-lista li { padding: 0.15rem 0; }
+
+/* Botón que en realidad es un <label> sobre un <input type=file> escondido: el selector
+   de ficheros nativo no se puede maquillar, y así queda igual que los demás botones. */
+.boton-archivo {
+  display: inline-block; padding: 0.45rem 0.9rem; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--panel); cursor: pointer; font-size: 0.9rem;
+}
+.boton-archivo:hover { border-color: var(--accent); }

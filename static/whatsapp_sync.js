@@ -261,6 +261,72 @@ async function cargaEstado() {
   }
 }
 
+// ------------------------------------------------------------- fotos de perfil
+
+el("wa-av-copiar").addEventListener("click", async () => {
+  try {
+    const js = await fetch("/api/whatsapp/avatares/extractor").then(r => r.text());
+    await navigator.clipboard.writeText(js);
+    el("wa-av-estado").textContent =
+      "Copiado. Pégalo en la consola de web.whatsapp.com (F12 → Console).";
+  } catch (err) {
+    el("wa-av-estado").textContent =
+      "No se pudo copiar al portapapeles. Ábrelo a mano: /api/whatsapp/avatares/extractor";
+  }
+});
+
+el("wa-av-fichero").addEventListener("change", async (ev) => {
+  const fichero = ev.target.files[0];
+  if (!fichero) return;
+  el("wa-av-estado").textContent = "Leyendo el fichero…";
+  try {
+    const lista = JSON.parse(await fichero.text());
+    // Va por la misma ruta que usa el navegador de WhatsApp, pero desde aquí es el mismo
+    // origen: sin CORS de por medio y sin el bloqueo de red privada de Chrome.
+    const r = await postJson("/api/whatsapp/avatares", { avatares: lista });
+    el("wa-av-estado").textContent =
+      `${formatNumero(r.utiles)} fotos en la lista. Pulsa «Descargar las fotos».`;
+    estadoAvatares();
+  } catch (err) {
+    el("wa-av-estado").textContent = "No se pudo leer: " + err.message;
+  }
+  ev.target.value = "";
+});
+
+el("wa-av-descargar").addEventListener("click", async () => {
+  el("wa-av-descargar").disabled = true;
+  el("wa-av-estado").textContent = "Descargando… (una cada cuarto de segundo, sin prisa)";
+  try {
+    const r = await postJson("/api/whatsapp/avatares/descargar", {});
+    el("wa-av-estado").textContent =
+      `Listo: ${formatNumero(r.hechos)} procesadas` + (r.errores ? `, ${r.errores} fallaron.` : ".");
+    estadoAvatares();
+  } catch (err) {
+    el("wa-av-estado").textContent = err.message;
+  } finally {
+    el("wa-av-descargar").disabled = false;
+  }
+});
+
+async function estadoAvatares() {
+  const e = await api("/api/whatsapp/avatares").catch(() => null);
+  if (!e) return;
+  const filas = [["Fotos guardadas", `${formatNumero(e.guardados)} · ${formatBytes(e.bytes)}`]];
+  if (e.guardados) {
+    const c = await api("/api/whatsapp/avatares/casar").catch(() => null);
+    if (c && !c.error) {
+      filas.push(["Emparejadas con una conversación",
+        `${formatNumero(c.casados)} de ${formatNumero(c.total)}`]);
+      // Los ambiguos son nombres repetidos en varias conversaciones: no se puede saber
+      // cuál es sin preguntar, así que se dicen en vez de elegir al azar.
+      if (c.ambiguos) filas.push(["Nombre repetido en varias conversaciones", formatNumero(c.ambiguos)]);
+      if (c.sin_casar) filas.push(["Sin conversación que les corresponda", formatNumero(c.sin_casar)]);
+    }
+  }
+  document.querySelector("#wa-av-tabla tbody").innerHTML = filas
+    .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("");
+}
+
 function pintaArchivo(a) {
   const cuerpo = document.querySelector("#wa-archivo tbody");
   el("wa-archivo-vacio").classList.toggle("hidden", !!(a && a.existe));
@@ -306,4 +372,4 @@ el("wa-recordar").addEventListener("change", async (ev) => {
   }
 });
 
-estadoClave().then(cargaEstado);
+estadoClave().then(cargaEstado).then(estadoAvatares);

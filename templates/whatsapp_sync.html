@@ -100,6 +100,41 @@
 </section>
 
 <section>
+  <h2>Fotos de perfil</h2>
+  <p class="muted">Las fotos de perfil <strong>no están en la copia de seguridad</strong>:
+  WhatsApp las guarda en su carpeta privada del móvil, donde no llega nadie sin
+  <em>root</em>. La única vía es leerlas de WhatsApp Web, y eso hay que hacerlo desde el
+  propio navegador — el servidor no puede entrar ahí por ti.</p>
+
+  <details id="wa-av-comofunciona">
+    <summary>Cómo se hace (tres pasos, un par de minutos)</summary>
+    <div class="instrucciones">
+      <ol>
+        <li>Abre <strong>web.whatsapp.com</strong> y espera a que cargue la lista de chats.</li>
+        <li>Abre la consola (<strong>F12</strong>, pestaña <em>Console</em>), pulsa el botón de
+        aquí abajo para copiar el fragmento y pégalo ahí. La primera vez Chrome pide que
+        escribas <code>allow pasting</code> antes de dejarte pegar.</li>
+        <li>Recorre la lista solo (verás el contador). Al terminar sale un botón verde:
+        púlsalo y guarda el fichero. Luego súbelo aquí abajo.</li>
+      </ol>
+      <p class="hint">El fragmento solo <em>lee</em> lo que la página ya ha pintado y escribe en
+      el buscador, al ritmo de una persona. No abre conversaciones ni envía nada. Las fotos
+      son de 96×96 px, que es el tamaño que WhatsApp Web usa en la lista.</p>
+    </div>
+  </details>
+
+  <div class="path-row">
+    <button id="wa-av-copiar" class="primary">Copiar el extractor</button>
+    <label class="boton-archivo">Subir el fichero…
+      <input type="file" id="wa-av-fichero" accept="application/json,.json" hidden>
+    </label>
+    <button id="wa-av-descargar">Descargar las fotos</button>
+  </div>
+  <p id="wa-av-estado" class="status-text"></p>
+  <table id="wa-av-tabla" class="compacta"><tbody></tbody></table>
+</section>
+
+<section>
   <h2>Archivo histórico</h2>
   <p class="muted">La copia del ordenador <strong>no es un espejo del móvil</strong>. Cada
   copia que se descifra se suma a un archivo que solo crece: si borras una conversación en

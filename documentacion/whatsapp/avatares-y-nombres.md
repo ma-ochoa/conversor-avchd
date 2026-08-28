@@ -1,5 +1,9 @@
 # Avatares y nombres: por qué no salen de la copia
 
+> **Los avatares sí se pueden conseguir, pero no de la copia: de WhatsApp Web.** Todo lo
+> que sigue sobre el móvil se mantiene —ahí no están—; la vía que sí funciona está al
+> final, en «De dónde salen entonces».
+
 Las tres fuentes coinciden, y coincide con lo medido aquí. Este fichero existe para no
 volver a buscarlo.
 
@@ -74,3 +78,71 @@ fuente de nombres disponible. Para los remitentes con LID, el número se recuper
 | `shared_prefs/com.whatsapp_preferences_light.xml` | Teléfono registrado, cuenta de Google | No |
 
 Las que faltan viven en el directorio privado de la aplicación, igual que los avatares.
+
+
+---
+
+# De dónde salen entonces: WhatsApp Web
+
+La lista de chats de WhatsApp Web pinta las fotos, y de ahí sí se pueden leer. Está
+implementado en `whatsapp/avatares.py` y `static/wa_extractor.js`.
+
+## Lo que costó descubrir
+
+**Los avatares no son `<img>`.** Son elementos `<image>` **dentro de un `<svg>`** con una
+máscara circular:
+
+```html
+<svg height="48" width="48">
+  <mask id="…"><circle cx="50%" cy="50%" r="calc(50% - 0px)"/></mask>
+  <g mask="url(#…)"><image xlink:href="https://media-…cdn.whatsapp.net/v/t61…"/></g>
+</svg>
+```
+
+`querySelectorAll('img')` no los encuentra —`<image>` de SVG es otro elemento— y devuelve
+solo las dos o tres imágenes sueltas de la interfaz. En la cuenta de prueba eso daba
+**1 de 73**, lo que parecía «casi nadie tiene foto» cuando en realidad la tenían todos.
+
+## Las URLs se descargan sin sesión
+
+Comprobado con `curl` sin cookies, sin *referer* y con user-agent de curl: **200 y JPEG
+válido**. La autorización va en la propia URL —`oh` es la firma y `oe` la caducidad, con
+unos **10 días** de margen—, no en la sesión. Por eso las descarga el servidor en Python
+y no hace falta automatizar el navegador.
+
+Cuidado con confundirlas: la foto **grande** que se ve al pinchar el avatar sí es un
+`blob:https://web.whatsapp.com/…`, que solo existe dentro de esa pestaña. Pegar *esa* URL
+en una ventana de incógnito lleva al código QR, y hace pensar que hace falta sesión.
+
+**No se puede pedir más resolución tocando la URL.** El parámetro `stp` la lleva dentro
+(`dst-jpg_s96x96_tt6`), pero cambiarlo a `s640x640` devuelve **403**: la firma lo cubre.
+
+| Vía | Resolución | Coste |
+|---|---|---|
+| Lista de chats y buscador | 96×96 (~2,8 KB) | Gratis, sin abrir nada |
+| Panel de info del contacto | 640×640 (~35 KB) | Un clic **por contacto** |
+
+## La lista de chats no basta
+
+WhatsApp Web solo sincroniza los chats recientes (en la cuenta de prueba, hasta feb-2025).
+Pero **el buscador filtra por «contiene»**, así que buscando las vocales y `+34` asoman los
+contactos sin conversación reciente. El efecto medido:
+
+| Paso | Avatares |
+|---|---|
+| Solo la lista de chats | 410 |
+| Barrido por letras | 710 |
+| Con el scroll bajando **hasta el fondo** | **1.045** |
+
+El salto final importa: la lista está virtualizada y los **contactos aparecen después de
+los chats**, así que un bucle de scroll con tope de pantallas se queda a mitad y nunca
+llega a ellos.
+
+## El casado
+
+El jid **no aparece en el DOM**, así que se cruza por el nombre visible, normalizado sin
+acentos ni signos, contra `chat.subject` y la agenda importada. Quien no está en la agenda
+sale con su propio número por nombre, y esos se casan por teléfono.
+
+Resultado sobre la cuenta de prueba: **907 emparejados de 1.045 (87%)**. El resto son el
+perfil propio, servicios y empresas sin conversación.

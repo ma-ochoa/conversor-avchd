@@ -54,3 +54,6 @@ wa.db
 *.vcard
 contacts.csv
 contactos*.csv
+
+# Listas de avatares extraídas de WhatsApp Web: nombres reales y URLs firmadas.
+avatares-whatsapp*.json

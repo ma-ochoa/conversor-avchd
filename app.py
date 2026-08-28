@@ -7,7 +7,7 @@ import subprocess
 import uuid
 from pathlib import Path
 
-from flask import Flask, abort, jsonify, render_template, request, send_file
+from flask import Flask, Response, abort, jsonify, render_template, request, send_file
 
 from converter.avanzada import DepsMissingError, check_deps
 from converter.avanzada_jobs import (
@@ -77,7 +77,7 @@ from importer.sources import describe_source, detect_sources
 from importer.thumbs import get_phone_thumbnail, get_thumbnail
 import whatsapp as wa
 from whatsapp import (agenda as wa_agenda, archivo as wa_archivo,
-                      backup as wa_backup,
+                      avatares as wa_avatares, backup as wa_backup,
                       chats as wa_chats, claves as wa_claves,
                       galeria as wa_galeria, jobs as wa_jobs,
                       media as wa_media, miniaturas as wa_miniaturas,
@@ -1000,6 +1000,64 @@ def whatsapp_historico():
     No se llama `/archivo` porque esa ruta ya sirve los ficheros de medios copiados.
     """
     return jsonify(wa_archivo.estado())
+
+
+@app.route("/api/whatsapp/avatares", methods=["GET", "POST", "OPTIONS"])
+def whatsapp_avatares():
+    """Recibe del navegador la lista (nombre, URL) sacada de WhatsApp Web.
+
+    **Lleva CORS a propósito y solo para ese origen.** El fragmento que extrae los
+    avatares corre dentro de `web.whatsapp.com`, así que el navegador exige permiso
+    explícito para mandarlos aquí. Se acepta ese origen y ninguno más: abrirlo a
+    cualquiera convertiría este endpoint en un sitio donde otra página podría escribir.
+    """
+    origen = request.headers.get("Origin", "")
+    permitido = origen == "https://web.whatsapp.com"
+
+    def responde(payload, codigo=200):
+        r = jsonify(payload)
+        if permitido:
+            r.headers["Access-Control-Allow-Origin"] = origen
+            r.headers["Access-Control-Allow-Headers"] = "Content-Type"
+            r.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
+            # Chrome trata una petición de una web pública a 127.0.0.1 como acceso a red
+            # privada y la corta salvo que se conceda aquí explícitamente.
+            r.headers["Access-Control-Allow-Private-Network"] = "true"
+        return r, codigo
+
+    if request.method == "OPTIONS":
+        return responde({})
+    if request.method == "GET":
+        return responde(wa_avatares.estado())
+    if origen and not permitido:
+        return responde({"error": "Origen no permitido."}, 403)
+
+    datos = request.get_json(silent=True) or {}
+    pares = datos.get("avatares") if isinstance(datos, dict) else datos
+    if not isinstance(pares, list):
+        return responde({"error": "Se esperaba una lista de {nombre, url}."}, 400)
+    return responde(wa_avatares.guarda_lista(pares))
+
+
+@app.route("/api/whatsapp/avatares/descargar", methods=["POST"])
+def whatsapp_avatares_descargar():
+    return jsonify(wa_avatares.descarga_pendientes())
+
+
+@app.route("/api/whatsapp/avatares/extractor")
+def whatsapp_avatares_extractor():
+    """El fragmento que se pega en la consola de WhatsApp Web, como texto plano.
+
+    Se sirve desde aquí para que la interfaz pueda ofrecerlo con un botón de copiar y
+    no haya que tenerlo escrito a mano en dos sitios.
+    """
+    ruta = Path(app.static_folder) / "wa_extractor.js"
+    return Response(ruta.read_text(encoding="utf-8"), mimetype="text/plain")
+
+
+@app.route("/api/whatsapp/avatares/casar")
+def whatsapp_avatares_casar():
+    return jsonify(wa_avatares.casa_con_la_base())
 
 
 @app.route("/api/whatsapp/clave", methods=["GET", "DELETE"])
