@@ -20,16 +20,53 @@ let todosLosChats = [];
 // -------------------------------------------------------------- lista de chats
 
 async function cargaChats() {
-  const datos = await api("/api/whatsapp/chats?limit=1000").catch((e) => {
+  // Se piden todas, no las primeras mil: los filtros trabajan sobre la lista completa,
+  // y con un tope bajo «Grupos» solo enseñaría los que cayeran en la primera tanda.
+  const datos = await api("/api/whatsapp/chats?limit=100000").catch((e) => {
     el("chats-resumen").textContent = e.message;
     return null;
   });
   if (!datos) return;
   todosLosChats = datos.chats;
-  pintaChats(todosLosChats);
-  el("chats-resumen").textContent =
-    `${formatNumero(datos.total)} conversaciones`;
+  aplicaFiltros();
 }
+
+// ------------------------------------------------------------------- filtros
+//
+// De las 5.188 conversaciones de una base real, 3.319 no tienen una sola palabra: solo
+// el aviso de «cifrado de extremo a extremo» de cuando se abrió el chat. Por eso la
+// casilla de «solo con conversación» viene marcada — sin ella la lista es casi toda
+// ruido y no hay forma de encontrar nada.
+
+let filtroTipo = "todos";
+
+function aplicaFiltros() {
+  const q = el("busca-chat").value.trim().toLowerCase();
+  const soloCharla = el("solo-con-charla").checked;
+
+  const visibles = todosLosChats.filter((c) =>
+    (filtroTipo === "todos" || c.tipo === filtroTipo) &&
+    (!soloCharla || c.mensajes_reales > 0) &&
+    (!q || c.nombre.toLowerCase().includes(q))
+  );
+
+  pintaChats(visibles);
+  const cuantas = formatNumero(visibles.length);
+  el("chats-resumen").textContent = visibles.length === todosLosChats.length
+    ? `${cuantas} conversaciones`
+    : `${cuantas} de ${formatNumero(todosLosChats.length)} conversaciones`;
+}
+
+el("filtros-chat").addEventListener("click", (ev) => {
+  const chip = ev.target.closest("[data-filtro]");
+  if (!chip) return;
+  el("filtros-chat").querySelectorAll(".chip").forEach((c) => c.classList.remove("activo"));
+  chip.classList.add("activo");
+  filtroTipo = chip.dataset.filtro;
+  aplicaFiltros();
+});
+
+el("solo-con-charla").addEventListener("change", aplicaFiltros);
 
 function pintaChats(chats) {
   const lista = el("lista-chats");
@@ -64,11 +101,7 @@ function pintaChats(chats) {
   }
 }
 
-el("busca-chat").addEventListener("input", (e) => {
-  const q = e.target.value.trim().toLowerCase();
-  pintaChats(q ? todosLosChats.filter((c) => c.nombre.toLowerCase().includes(q))
-               : todosLosChats);
-});
+el("busca-chat").addEventListener("input", aplicaFiltros);
 
 // ----------------------------------------------------------------- el hilo
 

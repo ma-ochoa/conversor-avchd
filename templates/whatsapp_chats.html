@@ -3,6 +3,16 @@
 <section class="visor">
   <aside class="panel-chats">
     <input id="busca-chat" type="search" placeholder="Buscar conversación…" autocomplete="off">
+    <div id="filtros-chat" class="filtros">
+      <button class="chip activo" data-filtro="todos">Todas</button>
+      <button class="chip" data-filtro="contacto">Contactos</button>
+      <button class="chip" data-filtro="sin_nombre">Sin contacto</button>
+      <button class="chip" data-filtro="grupo">Grupos</button>
+      <button class="chip" data-filtro="canal">Canales</button>
+    </div>
+    <label class="filtro-check" title="Deja fuera las que solo tienen el aviso de cifrado">
+      <input type="checkbox" id="solo-con-charla" checked> Solo con conversación
+    </label>
     <p id="chats-resumen" class="muted"></p>
     <ul id="lista-chats" class="lista-chats"></ul>
   </aside>

@@ -295,3 +295,17 @@ video.redonda { border-radius: 50%; aspect-ratio: 1; object-fit: cover; max-widt
 
 /* Cuando el avatar es una foto de verdad y no el icono de reserva. */
 img.chat-avatar { object-fit: cover; background: var(--border); }
+
+/* Filtros de la lista de conversaciones. */
+.filtros { display: flex; gap: 0.25rem; flex-wrap: wrap; margin: 0 0.6rem 0.4rem; }
+.filtros .chip {
+  padding: 0.2rem 0.6rem; border-radius: 999px; font-size: 0.76rem;
+  border: 1px solid var(--border); background: transparent; color: var(--muted);
+  cursor: pointer;
+}
+.filtros .chip:hover { color: var(--fg); }
+.filtros .chip.activo { background: var(--accent); border-color: var(--accent); color: #fff; }
+.filtro-check {
+  display: block; margin: 0 0.75rem 0.5rem; font-size: 0.76rem; color: var(--muted);
+  cursor: pointer;
+}

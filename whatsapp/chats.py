@@ -345,13 +345,19 @@ def lista_chats(busca: str = "", limit: int = 200, offset: int = 0) -> dict:
         # `chat_row_id`, así que ni siquiera hace falta pasar por `message` para contarlo.
         filas = con.execute("""
             WITH conteo AS (
-                SELECT chat_row_id, count(*) AS n FROM message GROUP BY chat_row_id
+                -- Los avisos del sistema (tipo 7) se cuentan aparte: 3.319 de las 5.188
+                -- conversaciones de esta base **no tienen una sola palabra**, solo el
+                -- «cifrado de extremo a extremo». Sin distinguirlo, la lista es sobre
+                -- todo ruido y no hay forma de filtrarlo.
+                SELECT chat_row_id, count(*) AS n,
+                       sum(CASE WHEN message_type != 7 THEN 1 ELSE 0 END) AS reales
+                  FROM message GROUP BY chat_row_id
             ), medios AS (
                 SELECT chat_row_id, count(*) AS n FROM message_media GROUP BY chat_row_id
             )
             SELECT c._id, c.subject, c.archived, c.unseen_message_count,
                    j.user, j.server, j.raw_string,
-                   conteo.n AS mensajes,
+                   conteo.n AS mensajes, conteo.reales AS mensajes_reales,
                    COALESCE(medios.n, 0) AS medios,
                    last.timestamp AS ultima_fecha,
                    last.message_type AS ultimo_tipo,
@@ -380,10 +386,18 @@ def lista_chats(busca: str = "", limit: int = 200, offset: int = 0) -> dict:
                 "es_grupo": f["server"] == "g.us",
                 "es_canal": f["server"] == "newsletter",
                 "avatar": f["_id"] in con_foto,
+                # En qué grupo cae al filtrar. `sin_nombre` es alguien con quien has
+                # hablado pero que no está en tu agenda: se le ve el número y nada más.
+                "tipo": ("grupo" if f["server"] == "g.us"
+                         else "canal" if f["server"] == "newsletter"
+                         else ("contacto" if not nombre.startswith("+")
+                               and nombre != "Contacto sin identificar" else "sin_nombre")
+                         if f["server"] in ("s.whatsapp.net", "lid") else "otro"),
+                "mensajes_reales": f["mensajes_reales"] or 0,
+                "medios": f["medios"] or 0,
                 "archivado": bool(f["archived"]),
                 "sin_leer": f["unseen_message_count"] or 0,
                 "mensajes": f["mensajes"],
-                "medios": f["medios"],
                 "ultima_fecha": f["ultima_fecha"],
                 "ultimo_tipo": TIPOS.get(f["ultimo_tipo"], "otro"),
                 "ultimo_mio": bool(f["ultimo_mio"]),
