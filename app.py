@@ -1044,6 +1044,16 @@ def whatsapp_avatares_descargar():
     return jsonify(wa_avatares.descarga_pendientes())
 
 
+@app.route("/api/whatsapp/avatar/<int:chat_id>")
+def whatsapp_avatar(chat_id):
+    """La foto de perfil de una conversación, si se consiguió y se pudo emparejar."""
+    ruta = wa_avatares.ruta_de(chat_id)
+    if not ruta:
+        abort(404)
+    # Cambian rara vez y son 3 KB: merece la pena que el navegador no las vuelva a pedir.
+    return send_file(ruta, mimetype="image/jpeg", conditional=True, max_age=86400)
+
+
 @app.route("/api/whatsapp/avatares/extractor")
 def whatsapp_avatares_extractor():
     """El fragmento que se pega en la consola de WhatsApp Web, como texto plano.

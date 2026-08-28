@@ -38,6 +38,9 @@ from .config import DIR_DATA
 
 DIR_AVATARES = DIR_DATA / "avatares"
 INDICE = DIR_AVATARES / "indice.json"
+# Resultado del casado: chat -> fichero. Se guarda para que pintar la lista de
+# conversaciones no tenga que recalcularlo, que son varios segundos.
+CASADOS = DIR_AVATARES / "casados.json"
 
 # Entre descarga y descarga. No es por miedo a un bloqueo —son ficheros de un CDN
 # público, servidos con su propia firma— sino por no abrir 400 conexiones de golpe.
@@ -57,6 +60,34 @@ def _clave(nombre: str) -> str:
     limpio = "".join(c for c in limpio if not unicodedata.combining(c))
     limpio = re.sub(r"[^\w\s]", " ", limpio.lower())
     return re.sub(r"\s+", " ", limpio).strip()
+
+
+def _fichero(nombre: str) -> str:
+    """Nombre del fichero de un avatar. Mismo criterio al guardar y al buscarlo."""
+    return f"{_clave(nombre).replace(' ', '_')[:80]}.jpg"
+
+
+_mapa_cache: dict = {}
+
+
+def mapa_chats() -> dict:
+    """chat_id (int) -> ruta del avatar. En memoria: se consulta por cada lista de chats."""
+    if not _mapa_cache:
+        if not CASADOS.is_file():
+            return {}
+        try:
+            crudo = json.loads(CASADOS.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            return {}
+        for chat_id, fichero in crudo.items():
+            ruta = DIR_AVATARES / fichero
+            if ruta.is_file():
+                _mapa_cache[int(chat_id)] = ruta
+    return _mapa_cache
+
+
+def ruta_de(chat_id: int) -> Path | None:
+    return mapa_chats().get(int(chat_id))
 
 
 def estado() -> dict:
@@ -88,7 +119,7 @@ def descarga_pendientes(progreso=None) -> dict:
     _trabajo.update({"estado": "descargando", "hechos": 0, "total": len(pares), "errores": 0})
     sesion = requests.Session()
     for i, p in enumerate(pares, 1):
-        destino = DIR_AVATARES / f"{_clave(p['nombre']).replace(' ', '_')[:80]}.jpg"
+        destino = DIR_AVATARES / _fichero(p["nombre"])
         if destino.is_file() and destino.stat().st_size > 0:
             _trabajo["hechos"] = i
             continue
@@ -164,6 +195,12 @@ def casa_con_la_base() -> dict:
             ambiguos.append({"nombre": p["nombre"], "cuantos": len(cand)})
         else:
             sueltos.append(p["nombre"])
+
+    DIR_AVATARES.mkdir(parents=True, exist_ok=True)
+    CASADOS.write_text(json.dumps(
+        {str(c["chat_id"]): _fichero(c["nombre"]) for c in casados},
+        ensure_ascii=False, indent=1), encoding="utf-8")
+    _mapa_cache.clear()
 
     return {"total": len(pares), "casados": len(casados), "por_telefono": por_tel,
             "ambiguos": len(ambiguos), "sin_casar": len(sueltos),

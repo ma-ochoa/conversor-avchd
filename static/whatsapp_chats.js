@@ -40,8 +40,15 @@ function pintaChats(chats) {
     li.dataset.id = c.id;
 
     const icono = c.es_grupo ? "👥" : (c.es_canal ? "📢" : "👤");
+    // Si la foto no está o falla, se cae al icono de siempre: un hueco en blanco en
+    // mitad de la lista se lee como que la aplicación está rota.
+    const avatar = c.avatar
+      ? `<img class="chat-avatar" src="/api/whatsapp/avatar/${c.id}" alt="" loading="lazy"
+              onerror="this.replaceWith(Object.assign(document.createElement('div'),
+                       {className:'chat-avatar', textContent:'${icono}'}))">`
+      : `<div class="chat-avatar">${icono}</div>`;
     li.innerHTML = `
-      <div class="chat-avatar">${icono}</div>
+      ${avatar}
       <div class="chat-texto">
         <div class="chat-linea1">
           <span class="chat-nombre">${esc(c.nombre)}</span>

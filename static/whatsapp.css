@@ -292,3 +292,6 @@ video.redonda { border-radius: 50%; aspect-ratio: 1; object-fit: cover; max-widt
   border-radius: 6px; background: var(--panel); cursor: pointer; font-size: 0.9rem;
 }
 .boton-archivo:hover { border-color: var(--accent); }
+
+/* Cuando el avatar es una foto de verdad y no el icono de reserva. */
+img.chat-avatar { object-fit: cover; background: var(--border); }

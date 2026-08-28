@@ -365,6 +365,9 @@ def lista_chats(busca: str = "", limit: int = 200, offset: int = 0) -> dict:
              ORDER BY COALESCE(c.sort_timestamp, last.timestamp, 0) DESC
         """).fetchall()
 
+        from . import avatares as _avatares
+        con_foto = _avatares.mapa_chats()
+
         chats = []
         for f in filas:
             nombre = f["subject"] or _bonito(f["raw_string"], f["user"], f["server"],
@@ -376,6 +379,7 @@ def lista_chats(busca: str = "", limit: int = 200, offset: int = 0) -> dict:
                 "nombre": nombre,
                 "es_grupo": f["server"] == "g.us",
                 "es_canal": f["server"] == "newsletter",
+                "avatar": f["_id"] in con_foto,
                 "archivado": bool(f["archived"]),
                 "sin_leer": f["unseen_message_count"] or 0,
                 "mensajes": f["mensajes"],
