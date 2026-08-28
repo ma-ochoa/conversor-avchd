@@ -30,11 +30,12 @@ from .config import AGENDA, DESCIFRADA
 
 # Qué es cada `message.message_type`, deducido cruzando con `message_media.mime_type`
 # sobre una base real. No están documentados en ninguna parte oficial.
-# Qué dice cada aviso del sistema (`message_system.action_type`). **Deducido cruzando
-# los tipos con las tablas `message_system_*` de esta misma base**, no de documentación:
-# WhatsApp no publica estos códigos. Los que no se han podido identificar se enseñan con
-# su número, que es más honesto que inventarles un texto — y deja la pista para quien
-# quiera averiguarlo.
+# Qué dice cada aviso del sistema (`message_system.action_type`). **WhatsApp no publica
+# estos códigos**: casi todos están deducidos cruzando los tipos con las tablas
+# `message_system_*` de esta misma base —el 6 solo aparece en `photo_change`, el 67 solo
+# en `initial_privacy_provider`—, y los que no dejan rastro en ninguna tabla se han
+# identificado mirando qué escribe la aplicación. Los que siguen sin identificar se
+# enseñan con su número, que es más honesto que inventarles un texto.
 #
 # El 67 se lleva 7.265 de los 13.902 avisos: es el «cifrado de extremo a extremo» que
 # WhatsApp escribe al abrir cualquier conversación.
@@ -45,6 +46,11 @@ AVISOS = {
     10:  "Cambió su número de teléfono",
     12:  "Alguien salió del grupo",
     14:  "Alguien entró en el grupo",
+    # El 18 no aparece en ninguna tabla de detalle y llega sin autor ni texto, así que
+    # por cruce era imposible. Identificado mirando la propia aplicación: es el «cambió
+    # tu código de seguridad con…» que WhatsApp escribe cuando alguien reinstala o
+    # cambia de teléfono. Con sus 2.265 casos es el segundo aviso más frecuente.
+    18:  "Cambió el código de seguridad",
     20:  "Se añadió a alguien al grupo",
     28:  "Cambió su número de teléfono",
     46:  "Cambió la descripción del grupo",
