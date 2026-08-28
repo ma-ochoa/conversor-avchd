@@ -40,7 +40,7 @@ async function cargaChats() {
 
 let filtroTipo = "todos";
 
-function aplicaFiltros() {
+function aplicaFiltros({ garantiza = null } = {}) {
   const q = el("busca-chat").value.trim().toLowerCase();
   const soloCharla = el("solo-con-charla").checked;
 
@@ -49,6 +49,14 @@ function aplicaFiltros() {
     (!soloCharla || c.mensajes_reales > 0) &&
     (!q || c.nombre.toLowerCase().includes(q))
   );
+
+  // A una conversación también se llega desde fuera —una foto de la galería lleva al
+  // mensaje en que se envió—, y esa puede no cumplir el filtro puesto. Manda el enlace:
+  // dejarla fuera la haría desaparecer justo cuando se quiere mirar.
+  if (garantiza != null && !visibles.some((c) => c.id === garantiza)) {
+    const suelta = todosLosChats.find((c) => c.id === garantiza);
+    if (suelta) visibles.unshift(suelta);
+  }
 
   pintaChats(visibles);
   const cuantas = formatNumero(visibles.length);
@@ -111,7 +119,9 @@ async function abreChat(id) {
   hayMas = false;
   el("hilo").innerHTML = '<p class="vacio">Cargando…</p>';
   el("cabecera-chat").classList.remove("hidden");
-  pintaChats(todosLosChats);                 // repinta para marcar el activo
+  // Repinta para marcar el activo, **respetando el filtro**: con `pintaChats` a secas,
+  // abrir una conversación devolvía la lista a «todas» aunque el botón siguiera pulsado.
+  aplicaFiltros({ garantiza: id });
 
   const datos = await api(`/api/whatsapp/chat/${id}/mensajes?limit=60`).catch((e) => {
     el("hilo").innerHTML = `<p class="vacio">${esc(e.message)}</p>`;
@@ -329,7 +339,7 @@ async function abreEnMensaje(chatId, mensajeId) {
   chatActual = chatId;
   el("cabecera-chat").classList.remove("hidden");
   el("hilo").innerHTML = '<p class="vacio">Buscando ese punto de la conversación…</p>';
-  pintaChats(todosLosChats);
+  aplicaFiltros({ garantiza: chatId });
 
   const datos = await api(
     `/api/whatsapp/chat/${chatId}/contexto?mensaje=${mensajeId}&alrededor=30`
